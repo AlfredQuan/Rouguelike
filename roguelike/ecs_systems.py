@@ -15,6 +15,7 @@ from .ecs_components import (
     Health,
     Loadout,
     Orbit,
+    Field,
     Pickup,
     Player,
     Position,
@@ -154,6 +155,16 @@ class RenderSystem(esper.Processor):
         for _, (pos, sprite) in self.world.get_components(Position, Sprite):
             pygame.draw.circle(self.surf, sprite.color, (int(pos.x), int(pos.y)), sprite.radius)
 
+        # Draw AoE fields as translucent circles
+        for _, (pos, fld) in self.world.get_components(Position, Field):
+            r = int(fld.radius)
+            if r <= 0:
+                continue
+            overlay = pygame.Surface((r * 2 + 4, r * 2 + 4), pygame.SRCALPHA)
+            color = (*fld.color[:3], 60)
+            pygame.draw.circle(overlay, color, (r + 2, r + 2), r)
+            self.surf.blit(overlay, (int(pos.x - r - 2), int(pos.y - r - 2)))
+
         # HUD: health bar, xp bar, level
         font = pygame.font.Font(None, 22)
         # Player stats
@@ -174,9 +185,9 @@ class RenderSystem(esper.Processor):
         x0, y0 = 20, 60
         small = pygame.font.Font(None, 20)
         for _, (loadout,) in self.world.get_components(Loadout):
-            mains = ", ".join([w.key for w in loadout.main]) or "-"
+            main_key = loadout.main.key if loadout.main is not None else "-"
             subs = ", ".join([w.key for w in loadout.sub]) or "-"
-            self.surf.blit(small.render(f"Main: {mains}", True, (230, 230, 230)), (x0, y0))
+            self.surf.blit(small.render(f"Main: {main_key}", True, (230, 230, 230)), (x0, y0))
             self.surf.blit(small.render(f"Sub:  {subs}", True, (230, 230, 230)), (x0, y0 + 18))
 
         # Level-up overlay
@@ -216,6 +227,24 @@ class RenderSystem(esper.Processor):
                         line = (line + " " + w).strip()
                 if line:
                     self.surf.blit(small_font.render(line, True, (220, 220, 230)), (x + 12, yy))
+        elif self.ctx.paused:
+            # Pause menu with cheat help
+            overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 160))
+            self.surf.blit(overlay, (0, 0))
+            big = pygame.font.Font(None, 36)
+            self.surf.blit(big.render("Paused", True, (255, 255, 255)), (self.width//2 - 60, 110))
+            info = [
+                "Cheats:",
+                "F1 +10 XP, F2 Heal, F3 Unlock all subs",
+                "F4 Add orbital, F11 Aura, F12 Storm",
+                "F5 Sniper, F7 Tri, F8 Nova, F9 Rapid, F10 Clear main",
+                "Press P to resume",
+            ]
+            y = 160
+            for line in info:
+                self.surf.blit(font.render(line, True, (230, 230, 230)), (self.width//2 - 260, y))
+                y += 24
 
 
 class WeaponFireSystem(esper.Processor):
@@ -228,7 +257,8 @@ class WeaponFireSystem(esper.Processor):
             return
         for pe, (ppos, _pl, loadout) in self.world.get_components(Position, Player, Loadout):
             # Main weapons: projectile-like behaviors
-            for w in loadout.main:
+            if loadout.main is not None:
+                w = loadout.main
                 w.cooldown -= dt
                 if w.cooldown <= 0:
                     self._fire_main(ppos, w)
@@ -237,6 +267,13 @@ class WeaponFireSystem(esper.Processor):
             for w in loadout.sub:
                 if w.behavior == "orbital":
                     self._ensure_orbitals(pe, ppos, w)
+                elif w.behavior == "aura":
+                    self._ensure_aura(pe, ppos, w)
+                elif w.behavior == "random_field":
+                    w.cooldown -= dt
+                    if w.cooldown <= 0:
+                        self._spawn_random_field(w)
+                        w.cooldown = 1.0 / max(0.01, w.fire_rate)
                 else:
                     w.cooldown -= dt
                     if w.cooldown <= 0:
@@ -327,6 +364,26 @@ class WeaponFireSystem(esper.Processor):
             self.world.add_component(e, Sprite((200, 220, 255), 6))
             spawned.append(e)
         w.state["entities"] = spawned
+
+    def _ensure_aura(self, owner_eid: int, ppos: Position, w: WeaponInstance) -> None:
+        if w.state is None:
+            w.state = {}
+        eid = w.state.get("aura_eid")
+        if eid is not None:
+            return
+        # Create a persistent field following the player
+        e = self.world.create_entity()
+        self.world.add_component(e, Position(ppos.x, ppos.y))
+        self.world.add_component(e, Field(owner=owner_eid, radius=w.radius, dps=max(1.0, w.damage), lifetime=-1.0, follow_owner=True, color=(255, 200, 120)))
+        w.state["aura_eid"] = e
+
+    def _spawn_random_field(self, w: WeaponInstance) -> None:
+        # Randomly spawn a damaging field on screen
+        x = self.ctx.rng.uniform(40, max(41, self.ctx.width - 40))
+        y = self.ctx.rng.uniform(40, max(41, self.ctx.height - 40))
+        e = self.world.create_entity()
+        self.world.add_component(e, Position(x, y))
+        self.world.add_component(e, Field(owner=None, radius=w.radius, dps=max(1.0, w.damage), lifetime=max(0.3, w.lifetime), follow_owner=False, color=(120, 200, 255)))
 
 
 class ProjectileLifetimeSystem(esper.Processor):
@@ -429,6 +486,34 @@ class EnemySpawnSystem(esper.Processor):
                 break
 
 
+class FieldSystem(esper.Processor):
+    def __init__(self, ctx: GameContext) -> None:
+        super().__init__()
+        self.ctx = ctx
+
+    def process(self, dt: float) -> None:
+        if self.ctx.paused:
+            return
+        # Update follow-owner fields and apply damage
+        to_delete = []
+        for e, (pos, fld) in self.world.get_components(Position, Field):
+            if fld.follow_owner and fld.owner is not None:
+                owner_pos = self.world.component_for_entity(fld.owner, Position)
+                if owner_pos is not None:
+                    pos.x, pos.y = owner_pos.x, owner_pos.y
+            # Apply DoT to enemies inside radius
+            r2 = fld.radius * fld.radius
+            for ee, (epos, _ec, _enemy, ehealth) in self.world.get_components(Position, Collider, Enemy, Health):
+                if (pos.x - epos.x) ** 2 + (pos.y - epos.y) ** 2 <= r2:
+                    ehealth.current -= int(fld.dps * dt)
+            if fld.lifetime >= 0:
+                fld.lifetime -= dt
+                if fld.lifetime <= 0:
+                    to_delete.append(e)
+        for e in to_delete:
+            self.world.delete_entity(e)
+
+
 class OrbitSystem(esper.Processor):
     def __init__(self, ctx: GameContext) -> None:
         super().__init__()
@@ -491,13 +576,14 @@ class LevelUpSystem(esper.Processor):
         owned_mains = set()
         for pe, (ld,) in self.world.get_components(Loadout):
             owned_subs.update([w.key for w in ld.sub])
-            owned_mains.update([w.key for w in ld.main])
+            if ld.main is not None:
+                owned_mains.add(ld.main.key)
             break
         for r in reqs:
             if isinstance(r, str):
-                if r.startswith("sub_unlocked:"):
+                if r.startswith("sub_unlocked:") or r.startswith("meta_unlocked_sub:"):
                     wkey = r.split(":", 1)[1]
-                    if wkey not in self.ctx.unlocked_subs and wkey not in owned_subs:
+                    if wkey not in self.ctx.meta_unlocked_subs and wkey not in owned_subs:
                         return False
                 elif r.startswith("sub_owned:"):
                     wkey = r.split(":", 1)[1]
@@ -534,33 +620,48 @@ def apply_card_effect(world: esper.World, player_eid: int, key: str, card: dict,
         h.current = min(h.max_hp, h.current + int(amount))
     elif effect == "main_damage_mul":
         loadout = world.component_for_entity(player_eid, Loadout)
-        for w in loadout.main:
-            w.damage = int(round(w.damage * float(amount)))
+        if loadout.main is not None:
+            loadout.main.damage = int(round(loadout.main.damage * float(amount)))
     elif effect == "main_fire_rate_mul":
         loadout = world.component_for_entity(player_eid, Loadout)
-        for w in loadout.main:
-            w.fire_rate *= float(amount)
+        if loadout.main is not None:
+            loadout.main.fire_rate *= float(amount)
     elif effect == "weapon_count_add":
         loadout = world.component_for_entity(player_eid, Loadout)
-        for group in (loadout.main, loadout.sub):
-            for w in group:
-                if weapon_key is None or w.key == weapon_key:
-                    w.count += int(amount)
+        # Only applies to sub weapons (main remains single)
+        for w in loadout.sub:
+            if weapon_key is None or w.key == weapon_key:
+                w.count += int(amount)
     elif effect == "sub_radius_add":
         loadout = world.component_for_entity(player_eid, Loadout)
         for w in loadout.sub:
             if weapon_key is None or w.key == weapon_key:
                 w.radius += float(amount)
+                # If it's an aura, update existing field entity radius
+                if w.behavior == "aura" and w.state and w.state.get("aura_eid") is not None:
+                    fid = w.state.get("aura_eid")
+                    fld = world.component_for_entity(fid, Field)
+                    if fld:
+                        fld.radius = w.radius
     elif effect == "sub_angular_speed_mul":
         loadout = world.component_for_entity(player_eid, Loadout)
         for w in loadout.sub:
             if weapon_key is None or w.key == weapon_key:
                 w.angular_speed_deg *= float(amount)
+    elif effect == "sub_dps_mul":
+        loadout = world.component_for_entity(player_eid, Loadout)
+        for w in loadout.sub:
+            if weapon_key is None or w.key == weapon_key:
+                w.damage = int(round(w.damage * float(amount)))
+                if w.behavior == "aura" and w.state and w.state.get("aura_eid") is not None:
+                    fid = w.state.get("aura_eid")
+                    fld = world.component_for_entity(fid, Field)
+                    if fld:
+                        fld.dps = max(1.0, float(w.damage))
     elif effect == "sniper_pierce_add":
         loadout = world.component_for_entity(player_eid, Loadout)
-        for w in loadout.main:
-            if w.key == "sniper":
-                w.pierce += int(amount)
+        if loadout.main is not None and loadout.main.key == "sniper":
+            loadout.main.pierce += int(amount)
     elif effect == "unlock_sub":
         if weapon_key:
             ctx.unlocked_subs.add(str(weapon_key))
@@ -602,7 +703,9 @@ class MenuInputSystem(esper.Processor):
     def process(self, dt: float) -> None:
         if not (self.ctx.paused and self.ctx.levelup_choices):
             return
-        for event in pygame.event.get([pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN]):
+        for event in self.ctx.events:
+            if event.type not in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                continue
             if event.type == pygame.KEYDOWN:
                 if event.key in (pygame.K_1, pygame.K_KP1):
                     idx = 0

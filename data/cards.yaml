@@ -46,39 +46,6 @@ sniper_pierce_1:
   amount: 2
   requires: ["has_main:sniper"]
 
-# Sub-weapon unlocks and acquisitions
-unlock_double_orb:
-  name: "Unlock: Double Orb"
-  description: Unlock the Double Orb sub-weapon.
-  effect: unlock_sub
-  weapon: double_orb
-
-add_double_orb:
-  name: "Acquire: Double Orb"
-  description: Add Double Orb to your sub slots.
-  effect: add_sub
-  weapon: double_orb
-  requires: ["sub_unlocked:double_orb", "not_owned_sub:double_orb"]
-
-unlock_guardian_orbs:
-  name: "Unlock: Guardian Orbs"
-  description: Unlock the Guardian Orbs sub-weapon.
-  effect: unlock_sub
-  weapon: guardian_orbs
-
-add_guardian_orbs:
-  name: "Acquire: Guardian Orbs"
-  description: Add Guardian Orbs to your sub slots.
-  effect: add_sub
-  weapon: guardian_orbs
-  requires: ["sub_unlocked:guardian_orbs", "not_owned_sub:guardian_orbs"]
-
-unlock_spike_ring:
-  name: "Unlock: Spike Ring"
-  description: Unlock the Spike Ring sub-weapon.
-  effect: unlock_sub
-  weapon: spike_ring
-
 add_spike_ring:
   name: "Acquire: Spike Ring"
   description: Add Spike Ring to your sub slots.
@@ -86,19 +53,56 @@ add_spike_ring:
   weapon: spike_ring
   requires: ["sub_unlocked:spike_ring", "not_owned_sub:spike_ring"]
 
-# Sub-weapon upgrades (appear after owning specific sub)
-double_orb_count_1:
-  name: "Double Orb+: +2 count"
-  description: Increase Double Orb count by 2.
-  effect: weapon_count_add
-  weapon: double_orb
-  amount: 2
-  requires: ["sub_owned:double_orb"]
+add_orbital_blade:
+  name: "Acquire: Orbital Blade"
+  description: Add Orbital Blade to your sub slots.
+  effect: add_sub
+  weapon: orbital_blade
+  requires: ["sub_unlocked:orbital_blade", "not_owned_sub:orbital_blade"]
 
-guardian_orbs_radius_1:
-  name: Guardian Radius+
-  description: Increase Guardian Orbs radius by 20.
+add_aura_garlic:
+  name: "Acquire: Garlic Aura"
+  description: Add Garlic Aura to your sub slots.
+  effect: add_sub
+  weapon: aura_garlic
+  requires: ["sub_unlocked:aura_garlic", "not_owned_sub:aura_garlic"]
+
+add_random_storm:
+  name: "Acquire: Random Storm"
+  description: Add Random Storm to your sub slots.
+  effect: add_sub
+  weapon: random_storm
+  requires: ["sub_unlocked:random_storm", "not_owned_sub:random_storm"]
+
+# Sub-weapon upgrades
+orbital_blade_count_1:
+  name: "Orbital Blade+: +1 count"
+  description: Increase Orbital Blade count by 1.
+  effect: weapon_count_add
+  weapon: orbital_blade
+  amount: 1
+  requires: ["sub_owned:orbital_blade"]
+
+aura_garlic_radius_1:
+  name: Garlic Radius+
+  description: Increase Garlic Aura radius by 20.
   effect: sub_radius_add
-  weapon: guardian_orbs
+  weapon: aura_garlic
   amount: 20
-  requires: ["sub_owned:guardian_orbs"]
+  requires: ["sub_owned:aura_garlic"]
+
+aura_garlic_dps_1:
+  name: Garlic Power+
+  description: Increase Garlic Aura damage by 20%.
+  effect: sub_dps_mul
+  weapon: aura_garlic
+  amount: 1.2
+  requires: ["sub_owned:aura_garlic"]
+
+random_storm_radius_1:
+  name: Storm Radius+
+  description: Increase Random Storm field radius by 15.
+  effect: sub_radius_add
+  weapon: random_storm
+  amount: 15
+  requires: ["sub_owned:random_storm"]

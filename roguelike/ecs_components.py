@@ -113,7 +113,7 @@ class WeaponInstance:
 
 @dataclass
 class Loadout:
-    main: List[WeaponInstance]
+    main: Optional[WeaponInstance]
     sub: List[WeaponInstance]
 
 
@@ -123,3 +123,13 @@ class Orbit:
     radius: float
     angle_deg: float
     angular_speed_deg: float
+
+
+@dataclass
+class Field:
+    owner: Optional[int]  # None for independent random fields; else follow owner
+    radius: float
+    dps: float
+    lifetime: float  # -1 for infinite
+    follow_owner: bool = False
+    color: tuple[int, int, int] = (255, 120, 120)

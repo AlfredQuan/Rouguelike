@@ -16,7 +16,7 @@ class CheatSystem(esper.Processor):
 
     def process(self, dt: float) -> None:
         # Non-blocking; read keydown events
-        for event in pygame.event.get([pygame.KEYDOWN]):
+        for event in getattr(self.ctx, 'events', []):
             if event.type != pygame.KEYDOWN:
                 continue
             key = event.key
@@ -31,16 +31,42 @@ class CheatSystem(esper.Processor):
                     h.current = h.max_hp
                 print("[Cheat] Heal to full")
             elif key == pygame.K_F3:
-                # Unlock all sub weapons
+                # Unlock all sub weapons (meta)
                 for k in (self.content.weapons_sub or {}).keys():
-                    self.ctx.unlocked_subs.add(k)
-                print("[Cheat] Unlocked all sub weapons")
+                    self.ctx.meta_unlocked_subs.add(k)
+                # persist to profile via world attachment
+                store = getattr(self.world, 'profile_store', None)
+                profile = getattr(self.world, 'profile', None)
+                if store and profile is not None:
+                    cur = set(profile.unlocked_subs or [])
+                    cur.update(self.ctx.meta_unlocked_subs)
+                    profile.unlocked_subs = sorted(list(cur))
+                    store.save()
+                print("[Cheat] Unlocked all sub weapons (meta)")
             elif key == pygame.K_F4:
-                # Give a sub weapon if unlocked
-                self._add_sub("double_orb")
+                # Give a sub weapon (orbital blade)
+                self._add_sub("orbital_blade")
             elif key == pygame.K_F5:
                 # Give sniper as main (adds alongside)
                 self._add_main("sniper")
+            elif key == pygame.K_F7:
+                # Add tri_shot main
+                self._add_main("tri_shot")
+            elif key == pygame.K_F8:
+                # Add nova_burst main
+                self._add_main("nova_burst")
+            elif key == pygame.K_F9:
+                # Add rapid_blaster main
+                self._add_main("rapid_blaster")
+            elif key == pygame.K_F10:
+                # Clear all main weapons (to isolate testing)
+                self._clear_mains()
+            elif key == pygame.K_F11:
+                # Add Garlic Aura
+                self._add_sub("aura_garlic")
+            elif key == pygame.K_F12:
+                # Add Random Storm
+                self._add_sub("random_storm")
             elif key == pygame.K_F6:
                 # Force open card selection (random 3 available)
                 # Build available from cards and context using LevelUpSystem's availability logic
@@ -105,5 +131,12 @@ class CheatSystem(esper.Processor):
             spread_deg=float(wd.get("spread_deg", 0.0)),
             state={},
         )
-        ld.main.append(inst)
-        print(f"[Cheat] Added main weapon: {key}")
+        ld.main = inst
+        print(f"[Cheat] Set main weapon: {key}")
+
+    def _clear_mains(self) -> None:
+        pe, ld = self._player_loadout()
+        if pe is None or ld is None:
+            return
+        ld.main = None
+        print("[Cheat] Cleared main weapon")

@@ -17,15 +17,21 @@ Structure
 Setup
 1) Python 3.10+
 2) Install deps: `pip install -r requirements.txt`
-3) Run: `python main.py`
+3) Run: `python main.py` (opens Meta Menu first)
 
 Cheats (for debugging)
 - `F1`: +10 XP
 - `F2`: Heal to full
 - `F3`: Unlock all sub-weapons
-- `F4`: Grant sub weapon `double_orb`
+- `F4`: Grant sub weapon `orbital_blade`
 - `F5`: Grant main weapon `sniper`
 - `F6`: Force open level-up selection
+- `F7`: Add main `tri_shot`
+- `F8`: Add main `nova_burst`
+- `F9`: Add main `rapid_blaster`
+- `F10`: Clear main
+- `F11`: Add sub `aura_garlic`
+- `F12`: Add sub `random_storm`
 
 Extending Content
 - Add or tweak YAML in `data/` — no code changes required for basic stats.
@@ -38,6 +44,11 @@ Weapons
 
 Meta-Progression
 - Stored in `save/profile.json`. Currency, unlocks, and upgrades persist across runs.
+- Meta Menu before each run:
+  - Unlock sub-weapons permanently (cost demo values)
+  - Unlock main-weapon switching, then choose main with Left/Right
+  - Press S to start run
+  - Pause during run with `P` to show cheat menu
 
 Notes
 - This is a minimal, clean scaffold to iterate quickly. Replace placeholder art and expand systems as needed.

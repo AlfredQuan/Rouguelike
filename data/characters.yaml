@@ -6,7 +6,7 @@ default:
   color: [60, 200, 255]
   radius: 14
   starting_main: [basic_bolt]
-  starting_sub: [orbital_blade]
+  starting_sub: []
 
 ranger:
   name: Ranger

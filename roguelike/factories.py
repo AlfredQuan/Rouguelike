@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 
 from .esper_compat import esper
 
@@ -22,10 +22,10 @@ from .ecs_components import (
 )
 
 
-def create_player(world: esper.World, content: Content, key: str, pos: Tuple[float, float]) -> int:
+def create_player(world: esper.World, content: Content, key: str, pos: Tuple[float, float], main_key: Optional[str] = None) -> int:
     ch = content.character(key)
-    # Starting weapons: multiple main/sub entries
-    start_main: List[str] = list(ch.get("starting_main", [ch.get("starting_weapon", "basic_bolt")]))
+    # Starting main: single weapon (either from meta selection or fallback)
+    start_main_key: str = main_key or ch.get("starting_main", [ch.get("starting_weapon", "basic_bolt")])[0]
     start_sub: List[str] = list(ch.get("starting_sub", []))
     e = world.create_entity()
     world.add_component(e, Position(float(pos[0]), float(pos[1])))
@@ -39,14 +39,12 @@ def create_player(world: esper.World, content: Content, key: str, pos: Tuple[flo
     world.add_component(e, Experience())
     move_speed = float(ch.get("move_speed", 180.0))
     world.add_component(e, Speed(base=move_speed))
-    # Loadout with main and sub weapon instances
-    main_instances: List[WeaponInstance] = []
-    for wk in start_main:
-        wd = content.weapon_main(wk) or content.weapon(wk)
-        if not wd:
-            continue
-        inst = WeaponInstance(
-            key=wk,
+    # Loadout with single main and multiple sub weapon instances
+    main_inst: Optional[WeaponInstance] = None
+    wd = content.weapon_main(start_main_key) or content.weapon(start_main_key)
+    if wd:
+        main_inst = WeaponInstance(
+            key=start_main_key,
             behavior=str(wd.get("behavior", "projectile")),
             fire_rate=float(wd.get("fire_rate", 2.0)),
             cooldown=0.0,
@@ -57,7 +55,6 @@ def create_player(world: esper.World, content: Content, key: str, pos: Tuple[flo
             spread_deg=float(wd.get("spread_deg", 0.0)),
             pierce=int(wd.get("pierce", 0)),
         )
-        main_instances.append(inst)
 
     sub_instances: List[WeaponInstance] = []
     for wk in start_sub:
@@ -80,5 +77,5 @@ def create_player(world: esper.World, content: Content, key: str, pos: Tuple[flo
         )
         sub_instances.append(inst)
 
-    world.add_component(e, Loadout(main=main_instances, sub=sub_instances))
+    world.add_component(e, Loadout(main=main_inst, sub=sub_instances))
     return e

@@ -10,12 +10,18 @@ class Profile:
     currency: int = 0
     unlocks: dict[str, bool] = None
     upgrades: dict[str, int] = None
+    unlocked_subs: list[str] = None
+    main_switch_unlocked: bool = False
+    selected_main: str = "basic_bolt"
 
     def to_dict(self):
         return {
             "currency": self.currency,
             "unlocks": self.unlocks or {},
             "upgrades": self.upgrades or {},
+            "unlocked_subs": self.unlocked_subs or [],
+            "main_switch_unlocked": self.main_switch_unlocked,
+            "selected_main": self.selected_main,
         }
 
 
@@ -33,11 +39,14 @@ class ProfileStore:
                     currency=int(data.get("currency", starting_currency)),
                     unlocks=dict(data.get("unlocks", {})),
                     upgrades=dict(data.get("upgrades", {})),
+                    unlocked_subs=list(data.get("unlocked_subs", [])),
+                    main_switch_unlocked=bool(data.get("main_switch_unlocked", False)),
+                    selected_main=str(data.get("selected_main", "basic_bolt")),
                 )
             except Exception:
-                self.profile = Profile(currency=starting_currency)
+                self.profile = Profile(currency=starting_currency, unlocked_subs=[])
         else:
-            self.profile = Profile(currency=starting_currency)
+            self.profile = Profile(currency=starting_currency, unlocked_subs=[])
             self.save()
         self._loaded = True
         return self.profile
@@ -45,4 +54,3 @@ class ProfileStore:
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(self.profile.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
-

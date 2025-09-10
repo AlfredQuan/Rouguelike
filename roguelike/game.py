@@ -22,6 +22,7 @@ from .ecs_systems import (
     MovementSystem,
     ProjectileLifetimeSystem,
     OrbitSystem,
+    FieldSystem,
     RenderSystem,
 )
 from .cheats import CheatSystem
@@ -40,16 +41,23 @@ class Game:
 
         self.profile_store = ProfileStore(settings.meta.save_path)
         self.profile = self.profile_store.load(starting_currency=settings.meta.starting_currency)
+        # Expose meta on world for systems like CheatSystem
+        setattr(self.world, "profile_store", self.profile_store)
+        setattr(self.world, "profile", self.profile)
 
         self.ctx = GameContext()
+        self.ctx.width = settings.window.width
+        self.ctx.height = settings.window.height
+        # Pull meta-unlocked subs into context
+        self.ctx.meta_unlocked_subs = set(self.profile.unlocked_subs or [])
 
         self._setup_world()
 
     def _setup_world(self) -> None:
         w, h = self.settings.window.width, self.settings.window.height
         gp = self.settings.gameplay
-        # Player entity
-        create_player(self.world, self.content, "default", (w / 2, h / 2))
+        # Player entity (single main from meta selection)
+        create_player(self.world, self.content, "default", (w / 2, h / 2), main_key=self.profile.selected_main)
 
         # Systems
         self.world.add_processor(InputSystem(self.ctx), priority=100)
@@ -59,6 +67,7 @@ class Game:
         self.world.add_processor(WeaponFireSystem(self.ctx), priority=85)
         self.world.add_processor(MovementSystem(self.ctx), priority=80)
         self.world.add_processor(OrbitSystem(self.ctx), priority=75)
+        self.world.add_processor(FieldSystem(self.ctx), priority=74)
         self.world.add_processor(ProjectileLifetimeSystem(self.ctx), priority=70)
         self.world.add_processor(CollisionSystem(self.ctx, w, h), priority=60)
         self.world.add_processor(EnemyDeathSystem(self.ctx, __import__("random").Random(1337)), priority=55)
@@ -81,13 +90,17 @@ class Game:
         while running:
             dt_ms = self.clock.tick(fps)
             dt = dt_ms / 1000.0
-            # Pump events; processors handle them. Check for global quit without draining queue.
-            pygame.event.pump()
-            if pygame.event.peek(pygame.QUIT):
-                running = False
-            keys = pygame.key.get_pressed()
-            if keys[pygame.K_ESCAPE]:
-                running = False
+            # Event handling: collect but let systems use them
+            events = pygame.event.get()
+            self.ctx.events = events
+            for event in events:
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        running = False
+                    elif event.key == pygame.K_p and not self.ctx.levelup_choices:
+                        self.ctx.paused = not self.ctx.paused
 
             self.world.process(dt)
 
@@ -109,5 +122,11 @@ class Game:
 def run_game() -> None:
     Game.init_pygame()
     settings = load_settings()
+    # Meta menu before starting the run
+    from .meta_menu import run_meta_menu
+    temp_content = Content()
+    temp_store = ProfileStore(settings.meta.save_path)
+    temp_profile = temp_store.load(starting_currency=settings.meta.starting_currency)
+    run_meta_menu(settings, temp_store, temp_content)
     game = Game(settings)
     game.run()

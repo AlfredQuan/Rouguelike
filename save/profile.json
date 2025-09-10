@@ -1,5 +1,14 @@
 {
-  "currency": 2,
+  "currency": 0,
   "unlocks": {},
-  "upgrades": {}
+  "upgrades": {},
+  "unlocked_subs": [
+    "aura_garlic",
+    "orbital_blade",
+    "random_storm",
+    "spike_ring",
+    "support_pulse"
+  ],
+  "main_switch_unlocked": true,
+  "selected_main": "nova_burst"
 }
