@@ -52,4 +52,5 @@ Meta-Progression
   - Pause during run with `P` to show cheat menu
 
 Notes
+- See docs/ARCHITECTURE.md for the architecture spec. Update it first before code changes.
 - This is a minimal, clean scaffold to iterate quickly. Replace placeholder art and expand systems as needed.
