@@ -1,0 +1,4 @@
+pygame>=2.5
+esper>=2.5
+PyYAML>=6.0
+

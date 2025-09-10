@@ -1,0 +1,18 @@
+# Define characters and base stats. Add more entries to extend.
+default:
+  name: Wanderer
+  move_speed: 180.0
+  max_health: 100
+  color: [60, 200, 255]
+  radius: 14
+  starting_main: [basic_bolt]
+  starting_sub: [orbital_blade]
+
+ranger:
+  name: Ranger
+  move_speed: 190.0
+  max_health: 90
+  color: [120, 220, 255]
+  radius: 14
+  starting_main: [tri_shot]
+  starting_sub: [support_pulse]

@@ -1,0 +1,40 @@
+# Window/display constants
+window:
+  width: 960
+  height: 540
+  title: Roguelike Survivor
+  fps: 60
+
+# Gameplay/balance constants
+gameplay:
+  player:
+    move_speed: 180.0
+    radius: 14
+    color: [60, 200, 255]
+    max_health: 100
+    regen_per_minute: 0
+  enemy:
+    base_speed: 80.0
+    radius: 12
+    color: [240, 70, 70]
+    damage: 10
+    spawn_per_minute: 60
+    spawn_distance_min: 250
+  projectile:
+    radius: 5
+    color: [255, 240, 120]
+  pickup:
+    radius: 6
+    xp_color: [140, 255, 140]
+
+# Spawning/waves
+spawning:
+  enemy_spawn_interval: 1.0   # seconds
+  spawn_increase_every: 30.0  # seconds
+  spawn_increase_amount: 0.5  # +50% rate every interval
+
+# Meta progression
+meta:
+  save_path: save/profile.json
+  starting_currency: 0
+

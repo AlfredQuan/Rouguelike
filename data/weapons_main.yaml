@@ -1,0 +1,42 @@
+# Main weapons: projectile-based
+
+basic_bolt:
+  name: Basic Bolt
+  behavior: projectile
+  fire_rate: 2.0
+  damage: 10
+  speed: 350.0
+  lifetime: 1.2
+  count: 1
+  spread_deg: 0
+
+tri_shot:
+  name: Tri-Shot
+  behavior: projectile
+  fire_rate: 1.2
+  damage: 8
+  speed: 320.0
+  lifetime: 1.0
+  count: 3
+  spread_deg: 30
+
+rapid_blaster:
+  name: Rapid Blaster
+  behavior: projectile
+  fire_rate: 4.0
+  damage: 6
+  speed: 360.0
+  lifetime: 0.9
+  count: 1
+  spread_deg: 0
+
+nova_burst:
+  name: Nova Burst
+  behavior: radial_burst
+  fire_rate: 0.6
+  damage: 7
+  speed: 280.0
+  lifetime: 0.9
+  count: 12
+  spread_deg: 0
+

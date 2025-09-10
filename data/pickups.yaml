@@ -1,0 +1,13 @@
+# Define pickups like XP gems and heals.
+xp_gem:
+  type: xp
+  value: 1
+  color: [140, 255, 140]
+  radius: 6
+
+heart:
+  type: heal
+  value: 10
+  color: [255, 120, 140]
+  radius: 7
+

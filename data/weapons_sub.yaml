@@ -1,0 +1,29 @@
+# Sub weapons: persistent orbitals and support bursts
+
+orbital_blade:
+  name: Orbital Blade
+  behavior: orbital
+  count: 2
+  radius: 90
+  angular_speed_deg: 180
+  damage: 6
+  lifetime: -1
+
+double_orb:
+  name: Double Orb
+  behavior: orbital
+  count: 4
+  radius: 120
+  angular_speed_deg: 120
+  damage: 5
+  lifetime: -1
+
+support_pulse:
+  name: Support Pulse
+  behavior: radial_burst
+  fire_rate: 0.8
+  damage: 5
+  speed: 240
+  lifetime: 0.8
+  count: 8
+

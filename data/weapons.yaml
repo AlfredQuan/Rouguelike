@@ -1,0 +1,10 @@
+# Define weapons. Extend with more weapons and effects.
+basic_bolt:
+  name: Basic Bolt
+  fire_rate: 2.0            # shots per second
+  damage: 10
+  speed: 350.0
+  lifetime: 1.2             # seconds
+  color: [255, 240, 120]
+  radius: 5
+

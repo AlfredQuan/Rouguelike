@@ -1,0 +1,24 @@
+# Level-up cards (meta/upgrades). Hook effects in code.
+move_speed_1:
+  name: Quick Feet
+  description: Increase move speed by 10%.
+  effect: player_move_speed_mul
+  amount: 1.10
+
+max_health_1:
+  name: Tough Skin
+  description: Increase max health by 20.
+  effect: player_max_health_add
+  amount: 20
+
+move_speed_2:
+  name: Fleet of Foot
+  description: Increase move speed by 15%.
+  effect: player_move_speed_mul
+  amount: 1.15
+
+max_health_2:
+  name: Iron Body
+  description: Increase max health by 30.
+  effect: player_max_health_add
+  amount: 30

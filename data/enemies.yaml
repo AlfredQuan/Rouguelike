@@ -1,0 +1,9 @@
+# Define enemy templates. Add more variants for variety.
+grunt:
+  name: Grunt
+  speed: 80.0
+  health: 20
+  damage: 10
+  color: [240, 70, 70]
+  radius: 12
+
