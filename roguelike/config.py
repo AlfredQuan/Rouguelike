@@ -39,9 +39,12 @@ class GameplayConfig:
 
     projectile_radius: int = 5
     projectile_color: tuple[int, int, int] = (255, 240, 120)
+    projectile_max_count: int = 500
 
     pickup_radius: int = 6
     xp_color: tuple[int, int, int] = (140, 255, 140)
+    pickup_magnet_radius: float = 220.0
+    pickup_max_count: int = 300
 
 
 @dataclass
@@ -119,8 +122,11 @@ def load_settings(path: str | Path = "config/settings.yaml") -> Settings:
         enemy_spawn_distance_min=int(gp.get("enemy", {}).get("spawn_distance_min", 250)),
         projectile_radius=int(gp.get("projectile", {}).get("radius", 5)),
         projectile_color=_tuple3(gp.get("projectile", {}).get("color", (255, 240, 120)), (255, 240, 120)),
+        projectile_max_count=int(gp.get("projectile", {}).get("max_count", 500)),
         pickup_radius=int(gp.get("pickup", {}).get("radius", 6)),
         xp_color=_tuple3(gp.get("pickup", {}).get("xp_color", (140, 255, 140)), (140, 255, 140)),
+        pickup_magnet_radius=float(gp.get("pickup", {}).get("magnet_radius", 220.0)),
+        pickup_max_count=int(gp.get("pickup", {}).get("max_count", 300)),
     )
 
     sp = raw.get("spawning", {})

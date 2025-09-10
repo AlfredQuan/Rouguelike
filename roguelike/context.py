@@ -31,3 +31,6 @@ class GameContext:
     world_width: int = 2400
     world_height: int = 2400
     grid_size: int = 64
+    # UI banners (wave/boss notifications)
+    banner_text: str = ""
+    banner_time_left: float = 0.0

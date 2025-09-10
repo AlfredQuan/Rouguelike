@@ -144,3 +144,15 @@ class Field:
 class Hurtbox:
     cooldown: float = 0.0
     i_frames: float = 0.5  # seconds of invulnerability after a hit
+
+
+@dataclass
+class Shooter:
+    range: float
+    fire_rate: float
+    cooldown: float
+    proj_speed: float
+    proj_damage: int
+    proj_lifetime: float
+    proj_color: tuple[int, int, int] = (255, 100, 100)
+    proj_radius: int = 4

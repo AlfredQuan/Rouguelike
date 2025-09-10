@@ -26,6 +26,7 @@ from .ecs_components import (
     Velocity,
     WeaponInstance,
     Hurtbox,
+    Shooter,
 )
 from .context import GameContext
 
@@ -107,11 +108,33 @@ class EnemyAISystem(esper.Processor):
         if player_pos is None:
             return
         px, py = player_pos.x, player_pos.y
-        for _, (pos, vel, enemy) in self.world.get_components(Position, Velocity, Enemy):
+        for e, (pos, vel, enemy) in self.world.get_components(Position, Velocity, Enemy):
             dx, dy = px - pos.x, py - pos.y
-            ndx, ndy, _ = _norm(dx, dy)
-            vel.x = ndx * enemy.speed * self.speed_scale
-            vel.y = ndy * enemy.speed * self.speed_scale
+            ndx, ndy, dist = _norm(dx, dy)
+            shoot = self.world.component_for_entity(e, Shooter)
+            if shoot is None:
+                vel.x = ndx * enemy.speed * self.speed_scale
+                vel.y = ndy * enemy.speed * self.speed_scale
+            else:
+                # Stay near the edge of range and fire
+                if dist > shoot.range * 0.9:
+                    vel.x = ndx * enemy.speed * self.speed_scale
+                    vel.y = ndy * enemy.speed * self.speed_scale
+                else:
+                    vel.x = 0
+                    vel.y = 0
+                shoot.cooldown -= dt
+                if shoot.cooldown <= 0:
+                    self._enemy_fire(pos, ndx, ndy, shoot)
+                    shoot.cooldown = 1.0 / max(0.05, shoot.fire_rate)
+
+    def _enemy_fire(self, pos: Position, dx: float, dy: float, s: Shooter) -> None:
+        proj = self.world.create_entity()
+        self.world.add_component(proj, Position(pos.x, pos.y))
+        self.world.add_component(proj, Velocity(dx * s.proj_speed, dy * s.proj_speed))
+        self.world.add_component(proj, Projectile(s.proj_damage, s.proj_lifetime, s.proj_speed, dx, dy, owner="enemy", despawn_on_hit=True))
+        self.world.add_component(proj, Collider(radius=s.proj_radius))
+        self.world.add_component(proj, Sprite(s.proj_color, s.proj_radius))
 
 
 class CollisionSystem(esper.Processor):
@@ -126,20 +149,28 @@ class CollisionSystem(esper.Processor):
             return
         # Projectile vs enemies
         for pe, (ppos, pcol, proj) in self.world.get_components(Position, Collider, Projectile):
-            if proj.owner != "player":
-                continue
-            for ee, (epos, ecol, _enemy, ehealth) in self.world.get_components(
-                Position, Collider, Enemy, Health
-            ):
-                if (ppos.x - epos.x) ** 2 + (ppos.y - epos.y) ** 2 <= (pcol.radius + ecol.radius) ** 2:
-                    ehealth.current -= proj.damage
-                    if proj.despawn_on_hit:
-                        if proj.pierce == 0:
-                            self.world.delete_entity(pe)
-                            break
-                        elif proj.pierce > 0:
-                            proj.pierce -= 1
-                    break
+            if proj.owner == "player":
+                for ee, (epos, ecol, _enemy, ehealth) in self.world.get_components(
+                    Position, Collider, Enemy, Health
+                ):
+                    if (ppos.x - epos.x) ** 2 + (ppos.y - epos.y) ** 2 <= (pcol.radius + ecol.radius) ** 2:
+                        ehealth.current -= proj.damage
+                        if proj.despawn_on_hit:
+                            if proj.pierce == 0:
+                                self.world.delete_entity(pe)
+                                break
+                            elif proj.pierce > 0:
+                                proj.pierce -= 1
+                        break
+            elif proj.owner == "enemy":
+                for ee, (ppos2, pcol2, _pl, phealth, phurt) in self.world.get_components(Position, Collider, Player, Health, Hurtbox):
+                    if (ppos.x - ppos2.x) ** 2 + (pcol.radius + pcol2.radius) ** 2 <= (pcol.radius + pcol2.radius) ** 2:
+                        if phurt.cooldown <= 0.0:
+                            phealth.current -= proj.damage
+                            phurt.cooldown = phurt.i_frames
+                        # enemy projectile always despawns on hit
+                        self.world.delete_entity(pe)
+                        break
 
         # Enemy vs player (with invulnerability frames)
         for pe, (ppos, pcol, _pl, phealth, phurt) in self.world.get_components(Position, Collider, Player, Health, Hurtbox):
@@ -217,20 +248,7 @@ class RenderSystem(esper.Processor):
         # HUD: health bar, xp bar, level
         font = pygame.font.Font(None, 22)
         # Player stats
-        for _, (h, exp) in self.world.get_components(Health, Experience):
-            # HP bar
-            hp_ratio = max(0.0, min(1.0, h.current / max(1, h.max_hp)))
-            pygame.draw.rect(self.surf, (60, 60, 60), pygame.Rect(20, 20, 200, 12))
-            pygame.draw.rect(self.surf, (60, 200, 80), pygame.Rect(20, 20, int(200 * hp_ratio), 12))
-            self.surf.blit(font.render(f"HP {h.current}/{h.max_hp}", True, (230, 230, 230)), (230, 18))
-            # XP bar (uses simple threshold function for preview)
-            xp_need = 5 + (exp.level - 1) * 2
-            xp_ratio = max(0.0, min(1.0, exp.xp / max(1, xp_need)))
-            pygame.draw.rect(self.surf, (60, 60, 60), pygame.Rect(20, 40, 200, 10))
-            pygame.draw.rect(self.surf, (120, 180, 255), pygame.Rect(20, 40, int(200 * xp_ratio), 10))
-            self.surf.blit(font.render(f"Lv {exp.level}", True, (230, 230, 230)), (230, 38))
-            # Score line moved lower to avoid overlap
-            self.surf.blit(font.render(f"Time {self.ctx.stats.time_sec:.0f}s  Score {int(self.ctx.stats.score)}  Kills {self.ctx.stats.kills}", True, (230, 230, 230)), (20, 64))
+        # HUD elements are drawn via pygame_gui in GameUI
 
         # Weapon HUD: show counts/types for quick feedback
         x0, y0 = 20, 60
@@ -419,6 +437,95 @@ class ProjectileLifetimeSystem(esper.Processor):
             self.world.delete_entity(e)
 
 
+class ProjectileCleanupSystem(esper.Processor):
+    def __init__(self, ctx: GameContext, max_count: int) -> None:
+        super().__init__()
+        self.ctx = ctx
+        self.max = int(max_count)
+
+    def process(self, dt: float) -> None:
+        projs = list(self.world.get_component(Projectile))
+        if len(projs) <= self.max:
+            return
+        # Prefer to remove finite-lifetime projectiles with largest remaining life
+        finite = []
+        infinite = []
+        for e, p in projs:
+            if p.lifetime < 0:
+                infinite.append((e, p))
+            else:
+                finite.append((e, p))
+        remove_needed = len(projs) - self.max
+        finite.sort(key=lambda ep: ep[1].lifetime, reverse=True)
+        to_delete = [e for e, _ in finite[:remove_needed]]
+        for e in to_delete:
+            self.world.delete_entity(e)
+
+
+class PickupMagnetSystem(esper.Processor):
+    def __init__(self, ctx: GameContext, magnet_radius: float, speed: float = 260.0) -> None:
+        super().__init__()
+        self.ctx = ctx
+        self.magnet_radius = float(magnet_radius)
+        self.speed = float(speed)
+
+    def process(self, dt: float) -> None:
+        if self.ctx.paused:
+            return
+        player_pos: Optional[Position] = None
+        for _, (ppos, _pl) in self.world.get_components(Position, Player):
+            player_pos = ppos
+            break
+        if player_pos is None:
+            return
+        pr = self.magnet_radius
+        pr2 = pr * pr
+        for e, (pos, _col, _pick) in self.world.get_components(Position, Collider, Pickup):
+            dx, dy = player_pos.x - pos.x, player_pos.y - pos.y
+            d2 = dx*dx + dy*dy
+            if d2 <= pr2:
+                ndx, ndy, _ = _norm(dx, dy)
+                # ensure velocity exists
+                vel = self.world.component_for_entity(e, Velocity)
+                if vel is None:
+                    vel = Velocity(0,0)
+                    self.world.add_component(e, vel)
+                vel.x = ndx * self.speed
+                vel.y = ndy * self.speed
+
+
+class PickupCleanupSystem(esper.Processor):
+    def __init__(self, ctx: GameContext, max_count: int) -> None:
+        super().__init__()
+        self.ctx = ctx
+        self.max = int(max_count)
+
+    def process(self, dt: float) -> None:
+        if self.ctx.paused:
+            return
+        pickups = list(self.world.get_components(Position, Pickup))
+        if len(pickups) <= self.max:
+            return
+        # Delete extras farthest from player
+        player_pos: Optional[Position] = None
+        for _, (ppos, _pl) in self.world.get_components(Position, Player):
+            player_pos = ppos
+            break
+        if player_pos is None:
+            # delete oldest arbitrary
+            to_del = [e for e, _ in pickups[: len(pickups) - self.max]]
+        else:
+            pickups_with_dist = []
+            for e, (pos, pick) in pickups:
+                dx, dy = pos.x - player_pos.x, pos.y - player_pos.y
+                d2 = dx*dx + dy*dy
+                pickups_with_dist.append((d2, e))
+            pickups_with_dist.sort(reverse=True)
+            to_del = [e for _, e in pickups_with_dist[: len(pickups) - self.max]]
+        for e in to_del:
+            self.world.delete_entity(e)
+
+
 class HurtCooldownSystem(esper.Processor):
     def __init__(self, ctx: GameContext) -> None:
         super().__init__()
@@ -460,26 +567,26 @@ class EnemyDeathSystem(esper.Processor):
 
 
 class EnemySpawnSystem(esper.Processor):
-    def __init__(self, ctx: GameContext, width: int, height: int, base_interval: float, min_distance: float, enemy_speed: float, enemy_damage: int, enemy_color: tuple[int, int, int], offscreen_margin: int = 80) -> None:
+    def __init__(self, ctx: GameContext, content, width: int, height: int, base_interval: float, min_distance: float, offscreen_margin: int = 80) -> None:
         super().__init__()
         self.ctx = ctx
+        self.content = content
         self.width = width
         self.height = height
-        self.interval = base_interval
+        self.base_interval = base_interval
         self.timer = 0.0
         self.min_distance = min_distance
-        self.enemy_speed = enemy_speed
-        self.enemy_damage = enemy_damage
-        self.enemy_color = enemy_color
         self.rng = random.Random(42)
         self.offscreen_margin = offscreen_margin
+        self.boss_spawned: set[str] = set()
 
     def process(self, dt: float) -> None:
         if self.ctx.paused:
             return
         self.timer += dt
-        if self.timer >= self.interval:
-            self.timer -= self.interval
+        interval = self._current_interval()
+        if self.timer >= interval:
+            self.timer -= interval
             self._spawn_enemy()
 
     def _spawn_enemy(self) -> None:
@@ -489,6 +596,16 @@ class EnemySpawnSystem(esper.Processor):
             break
         if player_pos is None:
             return
+        # Boss schedule
+        wave = self._current_wave()
+        boss = (wave or {}).get('boss') if wave else None
+        if boss:
+            key = str(boss.get('key'))
+            at = float(boss.get('at', 0))
+            if key and (key not in self.boss_spawned) and (self.ctx.stats.time_sec >= at):
+                self._spawn_enemy_of_type(key)
+                self.boss_spawned.add(key)
+                return
         # Spawn just outside the current camera viewport
         camx, camy = self.ctx.cam_x, self.ctx.cam_y
         vw, vh = self.width, self.height
@@ -523,15 +640,81 @@ class EnemySpawnSystem(esper.Processor):
             _, _, dist = _norm(dx, dy)
             if dist < self.min_distance:
                 continue
-            e = self.world.create_entity()
-            self.world.add_component(e, Position(x, y))
-            self.world.add_component(e, Velocity(0, 0))
-            self.world.add_component(e, Enemy(damage=self.enemy_damage, speed=self.enemy_speed))
-            self.world.add_component(e, Health(current=20, max_hp=20))
-            self.world.add_component(e, Collider(radius=12))
-            self.world.add_component(e, Faction("enemy"))
-            self.world.add_component(e, Sprite(self.enemy_color, 12))
+            key = self._pick_enemy_key()
+            if key is None:
+                return
+            self._spawn_enemy_of_type(key, x, y)
             break
+
+    def _current_wave(self):
+        waves = (self.content.waves or {}).get('waves', [])
+        t = self.ctx.stats.time_sec
+        cur = None
+        for w in waves:
+            start = float(w.get('start', 0))
+            duration = float(w.get('duration', 0))
+            if t >= start and t < start + duration:
+                cur = w
+        if cur is None and waves:
+            cur = waves[-1]
+        return cur
+
+    def _current_interval(self) -> float:
+        w = self._current_wave()
+        if w is None:
+            return self.base_interval
+        mul = float(w.get('spawn_interval', 1.0))
+        return max(0.1, self.base_interval * mul)
+
+    def _pick_enemy_key(self) -> Optional[str]:
+        w = self._current_wave() or {}
+        weights = w.get('weights', {})
+        if not weights:
+            return 'grunt' if 'grunt' in (self.content.enemies or {}) else None
+        keys = list(weights.keys())
+        vals = [max(0.0, float(weights[k])) for k in keys]
+        total = sum(vals)
+        if total <= 0:
+            return None
+        r = self.rng.uniform(0, total)
+        acc = 0.0
+        for k, val in zip(keys, vals):
+            acc += val
+            if r <= acc:
+                return k
+        return keys[-1]
+
+    def _spawn_enemy_of_type(self, key: str, x: Optional[float] = None, y: Optional[float] = None) -> None:
+        ed = self.content.enemy(key)
+        if not ed:
+            return
+        if x is None or y is None:
+            # center if missing
+            x = self.ctx.cam_x
+            y = self.ctx.cam_y
+        e = self.world.create_entity()
+        self.world.add_component(e, Position(x, y))
+        self.world.add_component(e, Velocity(0, 0))
+        self.world.add_component(e, Enemy(damage=int(ed.get('damage', 10)), speed=float(ed.get('speed', 80.0))))
+        hp = int(ed.get('health', 20))
+        self.world.add_component(e, Health(current=hp, max_hp=hp))
+        rad = int(ed.get('radius', 12))
+        self.world.add_component(e, Collider(radius=rad))
+        self.world.add_component(e, Faction("enemy"))
+        color = tuple(ed.get('color', [240, 70, 70]))
+        self.world.add_component(e, Sprite(color, rad))
+        beh = str(ed.get('behavior', 'chase'))
+        if beh == 'shooter':
+            self.world.add_component(e, Shooter(
+                range=float(ed.get('range', 260.0)),
+                fire_rate=float(ed.get('fire_rate', 0.8)),
+                cooldown=0.0,
+                proj_speed=float(ed.get('proj_speed', 260.0)),
+                proj_damage=int(ed.get('proj_damage', 8)),
+                proj_lifetime=float(ed.get('proj_lifetime', 2.0)),
+                proj_color=tuple(ed.get('proj_color', [255, 100, 100])),
+                proj_radius=int(ed.get('proj_radius', 4)),
+            ))
 
 
 class FieldSystem(esper.Processor):

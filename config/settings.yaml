@@ -29,9 +29,12 @@ gameplay:
   projectile:
     radius: 5
     color: [255, 240, 120]
+    max_count: 500
   pickup:
     radius: 6
     xp_color: [140, 255, 140]
+    magnet_radius: 220
+    max_count: 300
 
 # Spawning/waves
 spawning:

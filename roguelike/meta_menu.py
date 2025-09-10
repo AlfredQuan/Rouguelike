@@ -44,9 +44,39 @@ def run_meta_menu(settings: Settings, store: ProfileStore, content: Content) -> 
     main_switch_btn = pygame_gui.elements.UIButton(pygame.Rect(10, 35, 220, 32),
                                                    text=f"Unlock Switch (Cost {costs.get('unlock_main_switch', 2)})",
                                                    manager=ui, container=main_panel)
-    mains = list((content.weapons_main or content.weapons_legacy or {}).keys())
-    main_dropdown = pygame_gui.elements.UIDropDownMenu(options_list=mains or [store.profile.selected_main],
-                                                       starting_option=store.profile.selected_main,
+    def _current_mains() -> List[str]:
+        data = (content.weapons_main or {})
+        if not data:
+            data = (content.weapons_legacy or {})
+        return list(data.keys())
+
+    def _main_options_with_names() -> List[str]:
+        options: List[str] = []
+        mains_dict = (content.weapons_main or content.weapons_legacy or {})
+        for k in _current_mains():
+            name = str(mains_dict.get(k, {}).get('name', k))
+            options.append(f"{name} ({k})")
+        return options
+
+    def _parse_main_key(option_text: str) -> str:
+        if option_text.endswith(')') and '(' in option_text:
+            return option_text.split('(')[-1].rstrip(')')
+        return option_text
+
+    main_options = _main_options_with_names()
+    start_opt = None
+    if main_options:
+        # try to match selected_main
+        for opt in main_options:
+            if _parse_main_key(opt) == store.profile.selected_main:
+                start_opt = opt
+                break
+        if start_opt is None:
+            start_opt = main_options[0]
+    else:
+        start_opt = store.profile.selected_main
+    main_dropdown = pygame_gui.elements.UIDropDownMenu(options_list=(main_options or [start_opt]),
+                                                       starting_option=start_opt,
                                                        relative_rect=pygame.Rect(240, 35, 140, 32),
                                                        manager=ui, container=main_panel)
 
@@ -67,20 +97,53 @@ def run_meta_menu(settings: Settings, store: ProfileStore, content: Content) -> 
     reset_btn = pygame_gui.elements.UIButton(pygame.Rect(10, 10, 160, 32), text="Reset Profile", manager=ui, container=save_panel)
     start_btn = pygame_gui.elements.UIButton(pygame.Rect(20, settings.window.height - 50, 200, 36), text="Start Run (S)", manager=ui)
 
+    def rebuild_main_dropdown():
+        nonlocal main_dropdown
+        # Kill and recreate dropdown with fresh mains and current selection
+        try:
+            main_dropdown.kill()
+        except Exception:
+            pass
+        ms = store.profile.selected_main
+        options = _main_options_with_names()
+        # pick starting option that matches selected_main
+        start_opt2 = options[0] if options else ms
+        for opt in options:
+            if _parse_main_key(opt) == ms:
+                start_opt2 = opt
+                break
+        main_dropdown = pygame_gui.elements.UIDropDownMenu(options_list=(options or [start_opt2]),
+                                                           starting_option=start_opt2,
+                                                           relative_rect=pygame.Rect(240, 35, 140, 32),
+                                                           manager=ui, container=main_panel)
+
     def refresh_visibility():
         # Toggle panels per tab
-        shop_panel.hide() if current_tab != 'shop' else shop_panel.show()
+        shop_visible = (current_tab == 'shop')
+        if shop_visible:
+            shop_panel.show()
+            main_panel.show()
+        else:
+            shop_panel.hide()
+            main_panel.hide()
         ach_panel.hide() if current_tab != 'achievements' else ach_panel.show()
         save_panel.hide() if current_tab != 'save' else save_panel.show()
-        # Update main section controls by unlock state
-        if store.profile.main_switch_unlocked:
-            main_switch_btn.hide()
-            main_dropdown.show()
+        # Update main section controls by unlock state (only when shop is visible)
+        if shop_visible:
+            if store.profile.main_switch_unlocked:
+                main_switch_btn.hide()
+                main_dropdown.show()
+            else:
+                main_switch_btn.show()
+                main_dropdown.hide()
         else:
-            main_switch_btn.show()
+            main_switch_btn.hide()
             main_dropdown.hide()
         # Update currency label
         currency_label.set_text(f"Currency: {store.profile.currency}")
+        # Ensure dropdown options are always up to date when visible
+        if shop_visible:
+            rebuild_main_dropdown()
         # Update achievements
         defs = content.achievements or {}
         got = store.profile.achievements or {}
@@ -116,6 +179,7 @@ def run_meta_menu(settings: Settings, store: ProfileStore, content: Content) -> 
                             store.profile.currency -= cost
                             store.profile.main_switch_unlocked = True
                             store.save()
+                            rebuild_main_dropdown()
                             refresh_visibility()
                     elif event.ui_element in tab_buttons.values():
                         for name, btn in tab_buttons.items():
@@ -147,7 +211,7 @@ def run_meta_menu(settings: Settings, store: ProfileStore, content: Content) -> 
                         store.save()
                         refresh_visibility()
                 elif event.user_type == pygame_gui.UI_DROP_DOWN_MENU_CHANGED and event.ui_element == main_dropdown:
-                    store.profile.selected_main = event.text
+                    store.profile.selected_main = _parse_main_key(event.text)
                     store.save()
 
             ui.process_events(event)

@@ -18,10 +18,12 @@ class GameUI:
         self.on_return: Optional[Callable[[], None]] = None
         self.on_cheat_currency: Optional[Callable[[], None]] = None
 
-        self.level_window: Optional[pygame_gui.elements.UIWindow] = None
+        self.level_window: Optional[object] = None  # can be a panel or None when using free elements
         self.level_buttons: List[pygame_gui.elements.UIButton] = []
         self.level_choice_keys: List[str] = []
         self.on_choose: Optional[Callable[[str], None]] = None
+        self.level_elements: List[pygame_gui.core.interfaces.gui_element_interface.IUIElementInterface] = []
+        self.level_card_rects: List[pygame.Rect] = []
 
         # HUD elements
         self.hud_panel: Optional[pygame_gui.elements.UIPanel] = None
@@ -29,6 +31,10 @@ class GameUI:
         self.xp_bar: Optional[pygame_gui.elements.UIProgressBar] = None
         self.level_label: Optional[pygame_gui.elements.UILabel] = None
         self.score_label: Optional[pygame_gui.elements.UILabel] = None
+        # Weapons display
+        self.weapons_panel: Optional[pygame_gui.elements.UIPanel] = None
+        self.weapons_main_label: Optional[pygame_gui.elements.UILabel] = None
+        self.weapons_sub_label: Optional[pygame_gui.elements.UILabel] = None
 
     def process_event(self, event: pygame.event.Event) -> None:
         self.manager.process_events(event)
@@ -39,6 +45,12 @@ class GameUI:
                 self._choose_idx(1)
             elif event.key in (pygame.K_3, pygame.K_KP3):
                 self._choose_idx(2)
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self.level_window is not None:
+            mx, my = event.pos
+            for i, r in enumerate(self.level_card_rects):
+                if r.collidepoint(mx, my):
+                    self._choose_idx(i)
+                    break
 
     def update(self, dt: float) -> None:
         self.manager.update(dt)
@@ -73,23 +85,26 @@ class GameUI:
             return
         self.level_choice_keys = choices
         self.on_choose = on_choose
-        # Use a panel (no window frame) centered on screen with 3 card panels
-        w, h = 640, 240
+        # Create three standalone card elements centered on the screen (no outer frame)
+        w, h = 640, 200
         x, y = (self.width - w) // 2, (self.height - h) // 2
-        self.level_window = pygame_gui.elements.UIPanel(relative_rect=pygame.Rect(x, y, w, h), manager=self.manager, object_id='#level_panel')
-        container = self.level_window
+        # Mark level UI as open
+        self.level_window = True
         self.level_buttons = []
+        self.level_card_rects = []
         cw, ch = 190, 180
         spacing = 35
         start_x = 10
         y0 = 10
         for i, key in enumerate(choices[:3]):
             bx = start_x + i * (cw + spacing)
-            # Button acts as clickable card area; texts rendered via sub-elements for wrapping
-            btn = pygame_gui.elements.UIButton(relative_rect=pygame.Rect(bx, y0, cw, ch), text="", manager=self.manager, container=container, object_id=f'#card_button_{i}')
-            title = pygame_gui.elements.UILabel(relative_rect=pygame.Rect(bx + 8, y0 + 8, cw - 16, 24), text=self._card_title(key, i), manager=self.manager, container=container)
-            desc = pygame_gui.elements.UITextBox(html_text=self._card_desc_html(key), relative_rect=pygame.Rect(bx + 8, y0 + 36, cw - 16, ch - 44), manager=self.manager, container=container)
-            self.level_buttons.append(btn)
+            card_rect = pygame.Rect(x + bx, y + y0, cw, ch)
+            # Use a panel as the card background container
+            panel = pygame_gui.elements.UIPanel(relative_rect=card_rect, manager=self.manager, object_id=f'#card_panel_{i}')
+            title = pygame_gui.elements.UILabel(relative_rect=pygame.Rect(8, 8, cw - 16, 24), text=self._card_title(key, i), manager=self.manager, container=panel)
+            desc = pygame_gui.elements.UITextBox(html_text=self._card_desc_html(key), relative_rect=pygame.Rect(8, 36, cw - 16, ch - 44), manager=self.manager, container=panel)
+            self.level_elements.extend([panel])  # killing panel will kill children
+            self.level_card_rects.append(card_rect)
 
     def _card_label(self, key: str, idx: int) -> str:
         c = self.cards.get(key, {})
@@ -109,12 +124,19 @@ class GameUI:
         return desc.replace('\n', '<br>')
 
     def close_levelup(self) -> None:
-        if self.level_window is not None:
-            self.level_window.kill()
-            self.level_window = None
-            self.level_buttons.clear()
-            self.level_choice_keys = []
-            self.on_choose = None
+        # Kill any created elements
+        if self.level_elements:
+            for el in self.level_elements:
+                try:
+                    el.kill()
+                except Exception:
+                    pass
+        self.level_window = None
+        self.level_elements = []
+        self.level_buttons.clear()
+        self.level_choice_keys = []
+        self.on_choose = None
+        self.level_card_rects = []
 
     def handle_ui_event(self, event: pygame.event.Event) -> None:
         if event.type != pygame.USEREVENT:
@@ -129,12 +151,7 @@ class GameUI:
                 elif event.ui_element == self.pause_buttons.get('cheat') and self.on_cheat_currency:
                     self.on_cheat_currency()
                 return
-            # Level up buttons
-            if self.level_window is not None and self.level_buttons:
-                for i, btn in enumerate(self.level_buttons):
-                    if event.ui_element == btn:
-                        self._choose_idx(i)
-                        return
+            # Level up uses mouse hit-testing on panels; no button event needed
 
     def _choose_idx(self, i: int) -> None:
         if not self.level_choice_keys or self.on_choose is None:
@@ -165,3 +182,15 @@ class GameUI:
             self.level_label.set_text(f'Lv {level}')
         if self.score_label is not None:
             self.score_label.set_text(f'Time {int(time_sec)}s  Score {int(score)}  Kills {kills}')
+
+    def update_weapons(self, main_name: str, sub_names: list[str]) -> None:
+        # Create panel on demand
+        if self.weapons_panel is None:
+            self.weapons_panel = pygame_gui.elements.UIPanel(pygame.Rect(10, 100, 420, 48), manager=self.manager)
+            self.weapons_main_label = pygame_gui.elements.UILabel(pygame.Rect(6, 2, 400, 20), text='Main: -', manager=self.manager, container=self.weapons_panel)
+            self.weapons_sub_label = pygame_gui.elements.UILabel(pygame.Rect(6, 24, 400, 20), text='Subs: -', manager=self.manager, container=self.weapons_panel)
+        if self.weapons_main_label is not None:
+            self.weapons_main_label.set_text(f'Main: {main_name or "-"}')
+        if self.weapons_sub_label is not None:
+            subs_text = ", ".join(sub_names) if sub_names else "-"
+            self.weapons_sub_label.set_text(f'Subs: {subs_text}')

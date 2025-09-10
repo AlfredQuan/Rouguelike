@@ -8,7 +8,7 @@ import pygame
 
 from .config import Settings, load_settings
 from .content import Content
-from .ecs_components import Player, Health, Position
+from .ecs_components import Player, Health, Position, Loadout
 from .context import GameContext
 from .ecs_systems import (
     CollisionSystem,
@@ -24,6 +24,9 @@ from .ecs_systems import (
     OrbitSystem,
     FieldSystem,
     ScoreSystem,
+    PickupMagnetSystem,
+    PickupCleanupSystem,
+    ProjectileCleanupSystem,
     RenderSystem,
 )
 from .cheats import CheatSystem
@@ -76,21 +79,22 @@ class Game:
         self.world.add_processor(OrbitSystem(self.ctx), priority=75)
         self.world.add_processor(FieldSystem(self.ctx), priority=74)
         self.world.add_processor(ScoreSystem(self.ctx), priority=72)
+        self.world.add_processor(PickupMagnetSystem(self.ctx, self.settings.gameplay.pickup_magnet_radius), priority=71)
         self.world.add_processor(ProjectileLifetimeSystem(self.ctx), priority=70)
+        self.world.add_processor(ProjectileCleanupSystem(self.ctx, self.settings.gameplay.projectile_max_count), priority=69)
         self.world.add_processor(HurtCooldownSystem(self.ctx), priority=68)
         self.world.add_processor(CollisionSystem(self.ctx, w, h), priority=60)
         self.world.add_processor(EnemyDeathSystem(self.ctx, __import__("random").Random(1337)), priority=55)
         self.world.add_processor(EnemySpawnSystem(
             self.ctx,
+            self.content,
             width=w,
             height=h,
             base_interval=self.settings.spawning.enemy_spawn_interval,
             min_distance=self.settings.gameplay.enemy_spawn_distance_min,
-            enemy_speed=self.settings.gameplay.enemy_base_speed,
-            enemy_damage=self.settings.gameplay.enemy_damage,
-            enemy_color=self.settings.gameplay.enemy_color,
             offscreen_margin=self.settings.spawning.offscreen_margin,
         ), priority=50)
+        self.world.add_processor(PickupCleanupSystem(self.ctx, self.settings.gameplay.pickup_max_count), priority=48)
         self.world.add_processor(LevelUpSystem(self.ctx, self.content.cards), priority=45)
         self.world.add_processor(RenderSystem(self.ctx, self.content.cards, self.screen, w, h, self.settings.world.grid_size), priority=0)
 
@@ -170,6 +174,18 @@ class Game:
                 xp_need = 5 + (exp.level - 1) * 2
                 break
             ui.update_hud(hp_curr, hp_max, xp, xp_need, level, self.ctx.stats.time_sec, self.ctx.stats.score, self.ctx.stats.kills)
+            # Update weapons display via pygame_gui
+            main_name = ""
+            sub_names: list[str] = []
+            for _, (ld,) in self.world.get_components(Loadout):
+                if ld.main is not None:
+                    wdef = (self.content.weapons_main or self.content.weapons_legacy).get(ld.main.key, {})
+                    main_name = str(wdef.get("name", ld.main.key))
+                for w in ld.sub:
+                    sd = (self.content.weapons_sub or {}).get(w.key, {})
+                    sub_names.append(str(sd.get("name", w.key)))
+                break
+            ui.update_weapons(main_name, sub_names)
             ui.update(dt)
 
             # Check player death and end run

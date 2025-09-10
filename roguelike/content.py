@@ -24,6 +24,7 @@ class Content:
         self.weapons_legacy = _load_yaml(self.base / "data/weapons.yaml")
         self.pickups = _load_yaml(self.base / "data/pickups.yaml")
         self.cards = _load_yaml(self.base / "data/cards.yaml")
+        self.waves = _load_yaml(self.base / "data/waves.yaml")
         self.achievements = _load_yaml(self.base / "data/achievements.yaml")
 
     def character(self, key: str) -> Dict[str, Any]:

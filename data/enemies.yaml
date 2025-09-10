@@ -1,9 +1,68 @@
 # Define enemy templates. Add more variants for variety.
 grunt:
   name: Grunt
+  behavior: chase
   speed: 80.0
   health: 20
   damage: 10
   color: [240, 70, 70]
   radius: 12
 
+runner:
+  name: Runner
+  behavior: chase
+  speed: 140.0
+  health: 12
+  damage: 8
+  color: [255, 140, 90]
+  radius: 10
+
+tank:
+  name: Tank
+  behavior: chase
+  speed: 55.0
+  health: 60
+  damage: 15
+  color: [200, 120, 200]
+  radius: 16
+
+shooter:
+  name: Shooter
+  behavior: shooter
+  speed: 70.0
+  health: 18
+  damage: 6
+  color: [120, 200, 120]
+  radius: 12
+  range: 260.0
+  fire_rate: 0.8
+  proj_speed: 260.0
+  proj_damage: 8
+  proj_lifetime: 2.2
+  proj_color: [255, 90, 90]
+  proj_radius: 4
+
+elite_grunt:
+  name: Elite Grunt
+  behavior: chase
+  speed: 90.0
+  health: 120
+  damage: 15
+  color: [255, 90, 120]
+  radius: 14
+
+boss_ogre:
+  name: Ogre Boss
+  behavior: shooter
+  speed: 60.0
+  health: 1200
+  damage: 18
+  color: [120, 160, 255]
+  radius: 26
+  range: 320.0
+  fire_rate: 1.2
+  proj_speed: 300.0
+  proj_damage: 18
+  proj_lifetime: 3.0
+  proj_color: [255, 120, 120]
+  proj_radius: 6
