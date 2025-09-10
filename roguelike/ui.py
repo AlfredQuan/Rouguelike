@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import pygame
 import pygame_gui
+from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 
 class GameUI:
     def __init__(self, width: int, height: int, cards: Dict[str, dict]) -> None:
-        self.manager = pygame_gui.UIManager((width, height))
+        theme_path = Path('assets/ui/theme.json')
+        self.manager = pygame_gui.UIManager((width, height), theme_path if theme_path.exists() else None)
         self.width = width
         self.height = height
         self.cards = cards
@@ -16,7 +18,7 @@ class GameUI:
         self.pause_buttons: Dict[str, pygame_gui.elements.UIButton] = {}
         self.on_resume: Optional[Callable[[], None]] = None
         self.on_return: Optional[Callable[[], None]] = None
-        self.on_cheat_currency: Optional[Callable[[], None]] = None
+        self._cheat_callbacks: Dict[str, Callable[[], None]] = {}
 
         self.level_window: Optional[object] = None  # can be a panel or None when using free elements
         self.level_buttons: List[pygame_gui.elements.UIButton] = []
@@ -31,10 +33,14 @@ class GameUI:
         self.xp_bar: Optional[pygame_gui.elements.UIProgressBar] = None
         self.level_label: Optional[pygame_gui.elements.UILabel] = None
         self.score_label: Optional[pygame_gui.elements.UILabel] = None
-        # Weapons display
-        self.weapons_panel: Optional[pygame_gui.elements.UIPanel] = None
+        # Weapons display (inside HUD)
         self.weapons_main_label: Optional[pygame_gui.elements.UILabel] = None
         self.weapons_sub_label: Optional[pygame_gui.elements.UILabel] = None
+        # Banner
+        self.banner_label: Optional[pygame_gui.elements.UILabel] = None
+        self.banner_time_left: float = 0.0
+        # Wave timer
+        self.wave_label: Optional[pygame_gui.elements.UILabel] = None
 
     def process_event(self, event: pygame.event.Event) -> None:
         self.manager.process_events(event)
@@ -54,24 +60,42 @@ class GameUI:
 
     def update(self, dt: float) -> None:
         self.manager.update(dt)
+        # Banner timer
+        if self.banner_time_left > 0:
+            self.banner_time_left -= dt
+            if self.banner_time_left <= 0 and self.banner_label is not None:
+                self.banner_label.kill()
+                self.banner_label = None
 
     def draw(self, surface: pygame.Surface) -> None:
         self.manager.draw_ui(surface)
 
     # Pause menu
-    def open_pause(self, on_resume: Callable[[], None], on_return: Callable[[], None], on_cheat_currency: Optional[Callable[[], None]] = None) -> None:
+    def open_pause(self, on_resume: Callable[[], None], on_return: Callable[[], None], cheat_actions: Optional[Dict[str, Callable[[], None]]] = None) -> None:
         if self.pause_window is not None:
             return
         self.on_resume = on_resume
         self.on_return = on_return
-        self.on_cheat_currency = on_cheat_currency
-        w, h = 360, 220
+        w, h = 520, 360
         x, y = (self.width - w) // 2, (self.height - h) // 2
         self.pause_window = pygame_gui.elements.UIWindow(rect=pygame.Rect(x, y, w, h), window_display_title='Paused', manager=self.manager, object_id='#pause_window')
         container = self.pause_window
-        self.pause_buttons['resume'] = pygame_gui.elements.UIButton(relative_rect=pygame.Rect(20, 40, 140, 36), text='Resume (P)', manager=self.manager, container=container)
-        self.pause_buttons['return'] = pygame_gui.elements.UIButton(relative_rect=pygame.Rect(20, 86, 140, 36), text='Return to Menu', manager=self.manager, container=container)
-        self.pause_buttons['cheat'] = pygame_gui.elements.UIButton(relative_rect=pygame.Rect(20, 132, 180, 36), text='Cheat +10 Currency', manager=self.manager, container=container)
+        self.pause_buttons['resume'] = pygame_gui.elements.UIButton(relative_rect=pygame.Rect(20, 40, 160, 36), text='Resume (P)', manager=self.manager, container=container)
+        self.pause_buttons['return'] = pygame_gui.elements.UIButton(relative_rect=pygame.Rect(20, 86, 160, 36), text='Return to Menu', manager=self.manager, container=container)
+        # Cheats grid
+        if cheat_actions:
+            col = 0
+            row = 0
+            for label, fn in cheat_actions.items():
+                key = f'cheat_{col}_{row}'
+                bx = 200 + col * 160
+                by = 40 + row * 46
+                self.pause_buttons[key] = pygame_gui.elements.UIButton(relative_rect=pygame.Rect(bx, by, 150, 36), text=label, manager=self.manager, container=container)
+                self._cheat_callbacks[key] = fn
+                row += 1
+                if row >= 6:
+                    row = 0
+                    col += 1
 
     def close_pause(self) -> None:
         if self.pause_window is not None:
@@ -148,8 +172,14 @@ class GameUI:
                     self.on_resume()
                 elif event.ui_element == self.pause_buttons.get('return') and self.on_return:
                     self.on_return()
-                elif event.ui_element == self.pause_buttons.get('cheat') and self.on_cheat_currency:
-                    self.on_cheat_currency()
+                else:
+                    # find cheat button label
+                    for name, btn in self.pause_buttons.items():
+                        if btn == event.ui_element and name.startswith('cheat_'):
+                            fn = self._cheat_callbacks.get(name)
+                            if fn:
+                                fn()
+                            break
                 return
             # Level up uses mouse hit-testing on panels; no button event needed
 
@@ -164,13 +194,19 @@ class GameUI:
     def ensure_hud(self) -> None:
         if self.hud_panel is not None:
             return
-        self.hud_panel = pygame_gui.elements.UIPanel(pygame.Rect(10, 10, 300, 84), manager=self.manager)
-        pygame_gui.elements.UILabel(pygame.Rect(6, 0, 40, 20), text='HP', manager=self.manager, container=self.hud_panel)
-        self.hp_bar = pygame_gui.elements.UIProgressBar(pygame.Rect(46, 2, 240, 16), manager=self.manager, container=self.hud_panel)
-        pygame_gui.elements.UILabel(pygame.Rect(6, 28, 40, 20), text='XP', manager=self.manager, container=self.hud_panel)
-        self.xp_bar = pygame_gui.elements.UIProgressBar(pygame.Rect(46, 30, 240, 16), manager=self.manager, container=self.hud_panel)
-        self.level_label = pygame_gui.elements.UILabel(pygame.Rect(6, 56, 80, 20), text='Lv 1', manager=self.manager, container=self.hud_panel)
-        self.score_label = pygame_gui.elements.UILabel(pygame.Rect(90, 56, 200, 20), text='Time 0s  Score 0  Kills 0', manager=self.manager, container=self.hud_panel)
+        self.hud_panel = pygame_gui.elements.UIPanel(pygame.Rect(10, 10, 360, 90), manager=self.manager)
+        pygame_gui.elements.UILabel(pygame.Rect(4, 0, 24, 18), text='HP', manager=self.manager, container=self.hud_panel)
+        self.hp_bar = pygame_gui.elements.UIProgressBar(pygame.Rect(28, 2, 200, 14), manager=self.manager, container=self.hud_panel)
+        pygame_gui.elements.UILabel(pygame.Rect(4, 20, 24, 18), text='XP', manager=self.manager, container=self.hud_panel)
+        self.xp_bar = pygame_gui.elements.UIProgressBar(pygame.Rect(28, 22, 200, 14), manager=self.manager, container=self.hud_panel)
+        self.level_label = pygame_gui.elements.UILabel(pygame.Rect(236, 0, 52, 18), text='Lv 1', manager=self.manager, container=self.hud_panel)
+        self.score_label = pygame_gui.elements.UILabel(pygame.Rect(236, 20, 120, 18), text='T0 S0 K0', manager=self.manager, container=self.hud_panel)
+        # Weapons inside HUD — compact
+        self.weapons_main_label = pygame_gui.elements.UILabel(pygame.Rect(4, 42, 348, 18), text='Main: -', manager=self.manager, container=self.hud_panel)
+        self.weapons_sub_label = pygame_gui.elements.UILabel(pygame.Rect(4, 62, 348, 18), text='Subs: -', manager=self.manager, container=self.hud_panel)
+        # wave label is separate at top-right
+        if self.wave_label is None:
+            self.wave_label = pygame_gui.elements.UILabel(pygame.Rect(self.width - 260, 10, 250, 20), text='Wave -', manager=self.manager)
 
     def update_hud(self, hp_curr: int, hp_max: int, xp: int, xp_need: int, level: int, time_sec: float, score: float, kills: int) -> None:
         self.ensure_hud()
@@ -184,13 +220,28 @@ class GameUI:
             self.score_label.set_text(f'Time {int(time_sec)}s  Score {int(score)}  Kills {kills}')
 
     def update_weapons(self, main_name: str, sub_names: list[str]) -> None:
-        # Create panel on demand
-        if self.weapons_panel is None:
-            self.weapons_panel = pygame_gui.elements.UIPanel(pygame.Rect(10, 100, 420, 48), manager=self.manager)
-            self.weapons_main_label = pygame_gui.elements.UILabel(pygame.Rect(6, 2, 400, 20), text='Main: -', manager=self.manager, container=self.weapons_panel)
-            self.weapons_sub_label = pygame_gui.elements.UILabel(pygame.Rect(6, 24, 400, 20), text='Subs: -', manager=self.manager, container=self.weapons_panel)
+        self.ensure_hud()
         if self.weapons_main_label is not None:
             self.weapons_main_label.set_text(f'Main: {main_name or "-"}')
         if self.weapons_sub_label is not None:
             subs_text = ", ".join(sub_names) if sub_names else "-"
             self.weapons_sub_label.set_text(f'Subs: {subs_text}')
+
+    def show_banner(self, text: str, seconds: float = 3.0) -> None:
+        if not text:
+            return
+        # Create/replace top-center banner label
+        if self.banner_label is not None:
+            try:
+                self.banner_label.kill()
+            except Exception:
+                pass
+        width = min(600, self.width - 40)
+        x = (self.width - width) // 2
+        self.banner_label = pygame_gui.elements.UILabel(pygame.Rect(x, 10, width, 30), text=text, manager=self.manager)
+        self.banner_time_left = seconds
+
+    def update_wave_timer(self, text: str) -> None:
+        self.ensure_hud()
+        if self.wave_label is not None:
+            self.wave_label.set_text(text)

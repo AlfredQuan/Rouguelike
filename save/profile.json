@@ -1,22 +1,19 @@
 {
-  "currency": 1262,
+  "currency": 38,
   "unlocks": {},
   "upgrades": {},
-  "unlocked_subs": [
-    "aura_garlic",
-    "orbital_blade",
-    "random_storm",
-    "spike_ring",
-    "support_pulse"
+  "unlocked_subs": [],
+  "unlocked_mains": [
+    "basic_bolt",
+    "tri_shot",
+    "rapid_blaster",
+    "nova_burst",
+    "sniper"
   ],
   "main_switch_unlocked": true,
   "selected_main": "rapid_blaster",
-  "achievements": {
-    "killer_100": true,
-    "endurer_300": true,
-    "scorer_5000": true
-  },
-  "total_kills": 671,
-  "total_time": 720.7659999999942,
-  "total_score": 7430.766000000473
+  "achievements": {},
+  "total_kills": 31,
+  "total_time": 33.06799999999928,
+  "total_score": 343.06799999999595
 }

@@ -1,0 +1,59 @@
+{
+  "pygame_gui": {
+    "defaults": {
+      "font_path": null,
+      "font_size": 16,
+      "colours": {
+        "dark_bg": "#121216",
+        "normal_bg": "#1c1c22",
+        "normal_border": "#444856",
+        "hovered_bg": "#252530",
+        "selected_bg": "#2e2e3a",
+        "text": "#e6e6e6",
+        "disabled_text": "#9a9a9a",
+        "accent": "#6aa9ff",
+        "success": "#66ff66",
+        "warning": "#ffd166"
+      }
+    },
+    "UIWindow": {
+      "#pause_window": {
+        "shadow_width": 0,
+        "title_bar_height": 24,
+        "border_width": 1,
+        "normal_border_colour": "#6aa9ff",
+        "normal_bg": "#1c1c22"
+      }
+    },
+    "UIPanel": {
+      "#level_panel": {
+        "border_width": 0,
+        "shape": "rectangle",
+        "normal_bg": "#00000000"
+      },
+      "#card_panel_0": {"normal_bg": "#262a36", "border_width": 2, "normal_border_colour": "#6aa9ff"},
+      "#card_panel_1": {"normal_bg": "#262a36", "border_width": 2, "normal_border_colour": "#6aa9ff"},
+      "#card_panel_2": {"normal_bg": "#262a36", "border_width": 2, "normal_border_colour": "#6aa9ff"}
+    },
+    "UILabel": {
+      "colours": {"text": "#e6e6e6"}
+    },
+    "UIButton": {
+      "colours": {
+        "normal_bg": "#2a2e3a",
+        "hovered_bg": "#353b49",
+        "selected_bg": "#3f4656",
+        "normal_border": "#6aa9ff"
+      },
+      "shape": "rectangle",
+      "border_width": 1
+    },
+    "UIProgressBar": {
+      "border_width": 1,
+      "normal_border_colour": "#444856",
+      "filled_bar_colour": "#6aa9ff",
+      "normal_bg": "#20232b"
+    }
+  }
+}
+

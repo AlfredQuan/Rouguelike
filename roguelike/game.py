@@ -27,6 +27,7 @@ from .ecs_systems import (
     PickupMagnetSystem,
     PickupCleanupSystem,
     ProjectileCleanupSystem,
+    WeaponSanitySystem,
     RenderSystem,
 )
 from .cheats import CheatSystem
@@ -83,6 +84,7 @@ class Game:
         self.world.add_processor(ProjectileLifetimeSystem(self.ctx), priority=70)
         self.world.add_processor(ProjectileCleanupSystem(self.ctx, self.settings.gameplay.projectile_max_count), priority=69)
         self.world.add_processor(HurtCooldownSystem(self.ctx), priority=68)
+        self.world.add_processor(WeaponSanitySystem(self.ctx, self.content), priority=65)
         self.world.add_processor(CollisionSystem(self.ctx, w, h), priority=60)
         self.world.add_processor(EnemyDeathSystem(self.ctx, __import__("random").Random(1337)), priority=55)
         self.world.add_processor(EnemySpawnSystem(
@@ -128,13 +130,71 @@ class Game:
                                 # End run
                                 nonlocal running
                                 running = False
-                            def _cheat():
+                            # Cheat actions mapping
+                            def add_currency():
                                 profile = getattr(self.world, 'profile', None)
                                 store = getattr(self.world, 'profile_store', None)
                                 if profile is not None and store is not None:
                                     profile.currency += 10
                                     store.save()
-                            ui.open_pause(on_resume=_resume, on_return=_ret, on_cheat_currency=_cheat)
+                            def add_xp():
+                                for _, exp in self.world.get_component(__import__('roguelike.ecs_components', fromlist=['Experience']).Experience):
+                                    exp.xp += 10
+                            def heal():
+                                for _, h in self.world.get_component(Health):
+                                    h.current = h.max_hp
+                            def unlock_all_subs():
+                                for k in (self.content.weapons_sub or {}).keys():
+                                    self.ctx.meta_unlocked_subs.add(k)
+                                store = getattr(self.world, 'profile_store', None)
+                                profile = getattr(self.world, 'profile', None)
+                                if store and profile is not None:
+                                    s = set(profile.unlocked_subs or [])
+                                    s.update(self.ctx.meta_unlocked_subs)
+                                    profile.unlocked_subs = sorted(list(s))
+                                    store.save()
+                            def add_sub(key: str):
+                                # reuse cheat method
+                                from .cheats import CheatSystem
+                                cs = CheatSystem(self.ctx, self.content)
+                                cs.world = self.world
+                                cs._add_sub(key)
+                            def set_main(key: str):
+                                from .cheats import CheatSystem
+                                cs = CheatSystem(self.ctx, self.content)
+                                cs.world = self.world
+                                cs._add_main(key)
+                                # persist selection
+                                profile = getattr(self.world, 'profile', None)
+                                store = getattr(self.world, 'profile_store', None)
+                                if profile and store:
+                                    profile.selected_main = key
+                                    store.save()
+                            def force_cards():
+                                from .ecs_systems import LevelUpSystem as _L
+                                cards = self.content.cards
+                                lus = _L(self.ctx, cards)
+                                lus.world = self.world
+                                avail = [k for k, v in cards.items() if lus._is_available(k, v)]
+                                if avail:
+                                    self.ctx.levelup_choices = [self.ctx.rng.choice(avail) for _ in range(3)]
+                                    self.ctx.paused = True
+                                    ui.open_levelup(self.ctx.levelup_choices, _apply)
+                            cheat_actions = {
+                                '+10 Currency': add_currency,
+                                '+10 XP': add_xp,
+                                'Heal Full': heal,
+                                'Unlock All Subs': unlock_all_subs,
+                                'Add Orbital': lambda: add_sub('orbital_blade'),
+                                'Add Aura': lambda: add_sub('aura_garlic'),
+                                'Add Storm': lambda: add_sub('random_storm'),
+                                'Main Sniper': lambda: set_main('sniper'),
+                                'Main Tri': lambda: set_main('tri_shot'),
+                                'Main Nova': lambda: set_main('nova_burst'),
+                                'Main Rapid': lambda: set_main('rapid_blaster'),
+                                'Force Cards': force_cards,
+                            }
+                            ui.open_pause(on_resume=_resume, on_return=_ret, cheat_actions=cheat_actions)
                         else:
                             # Toggle off
                             self.ctx.paused = False
@@ -158,6 +218,11 @@ class Game:
                         return
                     card = self.content.cards.get(key, {})
                     apply_card_effect(self.world, player_eid, key, card, self.ctx)
+                    # 清空玩家速度，避免卡片选择后速度残留导致“自动向某方向移动”
+                    from .ecs_components import Velocity
+                    for _, (v,) in self.world.get_components(Velocity):
+                        v.x = 0.0
+                        v.y = 0.0
                     self.ctx.levelup_choices = None
                     self.ctx.paused = False
                     ui.close_levelup()
@@ -166,6 +231,12 @@ class Game:
                 ui.open_levelup(choices, _apply)
 
             self.world.process(dt)
+            # Show wave/boss banners when requested by systems
+            if self.ctx.banner_time_left > 0 and self.ctx.banner_text:
+                # Consume context banner and hand off to UI
+                ui.show_banner(self.ctx.banner_text, self.ctx.banner_time_left)
+                self.ctx.banner_text = ""
+                self.ctx.banner_time_left = 0.0
             # Update HUD via pygame_gui
             hp_curr = hp_max = xp = xp_need = level = 0
             for _, (h, exp) in self.world.get_components(Health, __import__('roguelike.ecs_components', fromlist=['Experience']).Experience):
@@ -174,6 +245,9 @@ class Game:
                 xp_need = 5 + (exp.level - 1) * 2
                 break
             ui.update_hud(hp_curr, hp_max, xp, xp_need, level, self.ctx.stats.time_sec, self.ctx.stats.score, self.ctx.stats.kills)
+            # Wave timer text
+            wave_text = self._compute_wave_text()
+            ui.update_wave_timer(wave_text)
             # Update weapons display via pygame_gui
             main_name = ""
             sub_names: list[str] = []
@@ -200,6 +274,49 @@ class Game:
     @staticmethod
     def init_pygame():
         pygame.init()
+
+    def _compute_wave_text(self) -> str:
+        waves = (self.content.waves or {}).get('waves', [])
+        t = self.ctx.stats.time_sec
+        if not waves:
+            return "Wave -"
+        cur_idx = -1
+        cur = None
+        for i, w in enumerate(waves):
+            start = float(w.get('start', 0))
+            duration = float(w.get('duration', 0))
+            if t >= start and t < start + duration:
+                cur_idx = i
+                cur = w
+                break
+        if cur is None:
+            # After last wave; show final wave
+            cur_idx = len(waves) - 1
+            cur = waves[-1]
+        start = float(cur.get('start', 0))
+        duration = float(cur.get('duration', 0))
+        elapsed = max(0.0, t - start)
+        remain = max(0.0, duration - elapsed) if duration > 0 else 0.0
+        # Surge countdown if present
+        surge_every = float(cur.get('surge_every', 0))
+        surge_txt = ""
+        if surge_every > 0:
+            # time to next surge
+            since = elapsed % surge_every
+            to_next = surge_every - since if since > 0 else 0
+            surge_txt = f" • Horde in {int(to_next)}s"
+        # Boss timing
+        boss = cur.get('boss')
+        boss_txt = ""
+        if boss:
+            if boss.get('at_end', False):
+                boss_txt = " • Boss at wave end"
+            else:
+                at = float(boss.get('at', -1))
+                if at >= 0:
+                    bt = max(0, int(at - t))
+                    boss_txt = f" • Boss in {bt}s"
+        return f"Wave {cur_idx+1}: {int(remain)}s left{surge_txt}{boss_txt}"
 
     def _populate_world(self) -> None:
         import random
@@ -276,7 +393,9 @@ def run_game() -> None:
         # Post-run screen (pygame_gui)
         screen = pygame.display.get_surface()
         import pygame_gui
-        ui = pygame_gui.UIManager((settings.window.width, settings.window.height))
+        from pathlib import Path
+        theme_path = Path('assets/ui/theme.json')
+        ui = pygame_gui.UIManager((settings.window.width, settings.window.height), theme_path if theme_path.exists() else None)
         panel = pygame_gui.elements.UIPanel(pygame.Rect(100, 80, settings.window.width - 200, settings.window.height - 160), manager=ui)
         pygame_gui.elements.UILabel(pygame.Rect(10, 10, 200, 30), text='Run Over', manager=ui, container=panel)
         info = [

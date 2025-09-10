@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pygame
 import pygame_gui
+from pathlib import Path
 from typing import Dict, List
 
 from .config import Settings
@@ -13,7 +14,8 @@ def run_meta_menu(settings: Settings, store: ProfileStore, content: Content) -> 
     screen = pygame.display.set_mode((settings.window.width, settings.window.height))
     pygame.display.set_caption(f"Meta Menu — {settings.window.title}")
     clock = pygame.time.Clock()
-    ui = pygame_gui.UIManager((settings.window.width, settings.window.height))
+    theme_path = Path('assets/ui/theme.json')
+    ui = pygame_gui.UIManager((settings.window.width, settings.window.height), theme_path if theme_path.exists() else None)
 
     # Costs (demo): could be moved to config later
     costs: Dict[str, int] = {
@@ -38,22 +40,27 @@ def run_meta_menu(settings: Settings, store: ProfileStore, content: Content) -> 
         manager=ui
     )
 
-    # Main section
-    main_panel = pygame_gui.elements.UIPanel(pygame.Rect(20, 60, 400, 120), manager=ui)
+    # Main section (buttons)
+    main_panel = pygame_gui.elements.UIPanel(pygame.Rect(20, 60, 420, 120), manager=ui)
     pygame_gui.elements.UILabel(pygame.Rect(10, 5, 160, 24), "Main Weapon", manager=ui, container=main_panel)
     main_switch_btn = pygame_gui.elements.UIButton(pygame.Rect(10, 35, 220, 32),
                                                    text=f"Unlock Switch (Cost {costs.get('unlock_main_switch', 2)})",
                                                    manager=ui, container=main_panel)
+
     def _current_mains() -> List[str]:
         data = (content.weapons_main or {})
         if not data:
             data = (content.weapons_legacy or {})
         return list(data.keys())
 
-    def _main_options_with_names() -> List[str]:
+    def _main_options_with_names(only_unlocked: bool = True) -> List[str]:
         options: List[str] = []
         mains_dict = (content.weapons_main or content.weapons_legacy or {})
-        for k in _current_mains():
+        keys_all = _current_mains()
+        keys = (store.profile.unlocked_mains or ['basic_bolt']) if only_unlocked else keys_all
+        for k in keys:
+            if k not in keys_all:
+                continue
             name = str(mains_dict.get(k, {}).get('name', k))
             options.append(f"{name} ({k})")
         return options
@@ -63,30 +70,21 @@ def run_meta_menu(settings: Settings, store: ProfileStore, content: Content) -> 
             return option_text.split('(')[-1].rstrip(')')
         return option_text
 
-    main_options = _main_options_with_names()
-    start_opt = None
-    if main_options:
-        # try to match selected_main
-        for opt in main_options:
-            if _parse_main_key(opt) == store.profile.selected_main:
-                start_opt = opt
-                break
-        if start_opt is None:
-            start_opt = main_options[0]
-    else:
-        start_opt = store.profile.selected_main
-    main_dropdown = pygame_gui.elements.UIDropDownMenu(options_list=(main_options or [start_opt]),
-                                                       starting_option=start_opt,
-                                                       relative_rect=pygame.Rect(240, 35, 140, 32),
-                                                       manager=ui, container=main_panel)
+    btn_prev = pygame_gui.elements.UIButton(pygame.Rect(240, 35, 32, 32), text='<', manager=ui, container=main_panel)
+    btn_next = pygame_gui.elements.UIButton(pygame.Rect(384, 35, 32, 32), text='>', manager=ui, container=main_panel)
+    main_label = pygame_gui.elements.UILabel(pygame.Rect(276, 35, 104, 32), text='-', manager=ui, container=main_panel)
 
     # Shop panel
     shop_panel = pygame_gui.elements.UIPanel(pygame.Rect(20, 190, 400, settings.window.height - 240), manager=ui)
-    subs = list((content.weapons_sub or {}).keys())
-    shop_list = pygame_gui.elements.UISelectionList(relative_rect=pygame.Rect(10, 10, 240, shop_panel.get_relative_rect().height - 20),
-                                                    item_list=[f"{k} ({'Unlocked' if k in (store.profile.unlocked_subs or []) else 'Locked'})" for k in subs],
-                                                    manager=ui, container=shop_panel)
-    unlock_btn = pygame_gui.elements.UIButton(pygame.Rect(260, 10, 120, 32), text="Unlock", manager=ui, container=shop_panel)
+    shop_tabs = {
+        'subs': pygame_gui.elements.UIButton(pygame.Rect(10, 10, 60, 26), text='Subs', manager=ui, container=shop_panel),
+        'mains': pygame_gui.elements.UIButton(pygame.Rect(80, 10, 60, 26), text='Mains', manager=ui, container=shop_panel),
+        'upg': pygame_gui.elements.UIButton(pygame.Rect(150, 10, 80, 26), text='Upgrades', manager=ui, container=shop_panel),
+    }
+    current_shop = 'subs'
+    shop_list = pygame_gui.elements.UISelectionList(relative_rect=pygame.Rect(10, 46, 240, shop_panel.get_relative_rect().height - 56),
+                                                    item_list=[], manager=ui, container=shop_panel)
+    unlock_btn = pygame_gui.elements.UIButton(pygame.Rect(260, 46, 120, 32), text="Unlock", manager=ui, container=shop_panel)
 
     # Achievements panel
     ach_panel = pygame_gui.elements.UIPanel(pygame.Rect(440, 60, settings.window.width - 460, settings.window.height - 100), manager=ui)
@@ -97,25 +95,19 @@ def run_meta_menu(settings: Settings, store: ProfileStore, content: Content) -> 
     reset_btn = pygame_gui.elements.UIButton(pygame.Rect(10, 10, 160, 32), text="Reset Profile", manager=ui, container=save_panel)
     start_btn = pygame_gui.elements.UIButton(pygame.Rect(20, settings.window.height - 50, 200, 36), text="Start Run (S)", manager=ui)
 
-    def rebuild_main_dropdown():
-        nonlocal main_dropdown
-        # Kill and recreate dropdown with fresh mains and current selection
-        try:
-            main_dropdown.kill()
-        except Exception:
-            pass
-        ms = store.profile.selected_main
-        options = _main_options_with_names()
-        # pick starting option that matches selected_main
-        start_opt2 = options[0] if options else ms
+    def update_main_label():
+        options = _main_options_with_names(only_unlocked=True)
+        if not options:
+            main_label.set_text('-')
+            return
+        keys = [_parse_main_key(opt) for opt in options]
+        if store.profile.selected_main not in keys:
+            store.profile.selected_main = keys[0]
+            store.save()
         for opt in options:
-            if _parse_main_key(opt) == ms:
-                start_opt2 = opt
+            if _parse_main_key(opt) == store.profile.selected_main:
+                main_label.set_text(opt)
                 break
-        main_dropdown = pygame_gui.elements.UIDropDownMenu(options_list=(options or [start_opt2]),
-                                                           starting_option=start_opt2,
-                                                           relative_rect=pygame.Rect(240, 35, 140, 32),
-                                                           manager=ui, container=main_panel)
 
     def refresh_visibility():
         # Toggle panels per tab
@@ -132,19 +124,23 @@ def run_meta_menu(settings: Settings, store: ProfileStore, content: Content) -> 
         if shop_visible:
             if store.profile.main_switch_unlocked:
                 main_switch_btn.hide()
-                main_dropdown.show()
+                btn_prev.show()
+                btn_next.show()
+                main_label.show()
+                update_main_label()
             else:
                 main_switch_btn.show()
-                main_dropdown.hide()
+                btn_prev.hide()
+                btn_next.hide()
+                main_label.hide()
         else:
             main_switch_btn.hide()
-            main_dropdown.hide()
+            btn_prev.hide()
+            btn_next.hide()
+            main_label.hide()
         # Update currency label
         currency_label.set_text(f"Currency: {store.profile.currency}")
-        # Ensure dropdown options are always up to date when visible
-        if shop_visible:
-            rebuild_main_dropdown()
-        # Update achievements
+        # Update achievements text
         defs = content.achievements or {}
         got = store.profile.achievements or {}
         lines = ["<b>Achievements</b><br><br>"]
@@ -156,8 +152,16 @@ def run_meta_menu(settings: Settings, store: ProfileStore, content: Content) -> 
         totals = f"Totals — Kills {getattr(store.profile,'total_kills',0)}, Time {int(getattr(store.profile,'total_time',0))}s, Score {int(getattr(store.profile,'total_score',0))}"
         lines.append(totals)
         ach_text.set_text("".join(lines))
-        # Update shop list
-        shop_list.set_item_list([f"{k} ({'Unlocked' if k in (store.profile.unlocked_subs or []) else 'Locked'})" for k in subs])
+        # Update shop list based on category
+        if current_shop == 'subs':
+            subs = list((content.weapons_sub or {}).keys())
+            items = [f"{k} ({'Unlocked' if k in (store.profile.unlocked_subs or []) else 'Locked'})" for k in subs]
+        elif current_shop == 'mains':
+            mains = _current_mains()
+            items = [f"{k} ({'Unlocked' if k in (store.profile.unlocked_mains or []) else 'Locked'})" for k in mains]
+        else:
+            items = ["(Upgrades TBD)"]
+        shop_list.set_item_list(items)
 
     refresh_visibility()
 
@@ -179,7 +183,6 @@ def run_meta_menu(settings: Settings, store: ProfileStore, content: Content) -> 
                             store.profile.currency -= cost
                             store.profile.main_switch_unlocked = True
                             store.save()
-                            rebuild_main_dropdown()
                             refresh_visibility()
                     elif event.ui_element in tab_buttons.values():
                         for name, btn in tab_buttons.items():
@@ -191,13 +194,33 @@ def run_meta_menu(settings: Settings, store: ProfileStore, content: Content) -> 
                         sel = shop_list.get_single_selection()
                         if sel:
                             key = sel.split(' ')[0]
-                            if key not in (store.profile.unlocked_subs or []):
-                                cost = costs.get(key, 1)
-                                if store.profile.currency >= cost:
-                                    store.profile.currency -= cost
-                                    (store.profile.unlocked_subs or []).append(key)
-                                    store.save()
-                                    refresh_visibility()
+                            if current_shop == 'subs':
+                                # 确保列表已初始化并正确追加
+                                if store.profile.unlocked_subs is None:
+                                    store.profile.unlocked_subs = []
+                                if key not in store.profile.unlocked_subs:
+                                    cost = costs.get(key, 1)
+                                    if store.profile.currency >= cost:
+                                        store.profile.currency -= cost
+                                        store.profile.unlocked_subs.append(key)
+                                        store.save()
+                                        refresh_visibility()
+                            elif current_shop == 'mains':
+                                if store.profile.unlocked_mains is None:
+                                    store.profile.unlocked_mains = []
+                                if key not in store.profile.unlocked_mains:
+                                    cost = 2
+                                    if store.profile.currency >= cost:
+                                        store.profile.currency -= cost
+                                        store.profile.unlocked_mains.append(key)
+                                        store.save()
+                                        refresh_visibility()
+                    elif event.ui_element in shop_tabs.values():
+                        for n, btn in shop_tabs.items():
+                            if event.ui_element == btn:
+                                current_shop = n
+                                refresh_visibility()
+                                break
                     elif event.ui_element == reset_btn:
                         p = store.profile
                         p.currency = 0
@@ -210,9 +233,30 @@ def run_meta_menu(settings: Settings, store: ProfileStore, content: Content) -> 
                         p.total_score = 0.0
                         store.save()
                         refresh_visibility()
-                elif event.user_type == pygame_gui.UI_DROP_DOWN_MENU_CHANGED and event.ui_element == main_dropdown:
-                    store.profile.selected_main = _parse_main_key(event.text)
-                    store.save()
+                    elif event.ui_element == btn_prev and store.profile.main_switch_unlocked:
+                        options = _main_options_with_names(only_unlocked=True)
+                        if options:
+                            keys = [_parse_main_key(opt) for opt in options]
+                            try:
+                                idx = keys.index(store.profile.selected_main)
+                            except ValueError:
+                                idx = 0
+                            idx = (idx - 1) % len(keys)
+                            store.profile.selected_main = keys[idx]
+                            store.save()
+                            refresh_visibility()
+                    elif event.ui_element == btn_next and store.profile.main_switch_unlocked:
+                        options = _main_options_with_names(only_unlocked=True)
+                        if options:
+                            keys = [_parse_main_key(opt) for opt in options]
+                            try:
+                                idx = keys.index(store.profile.selected_main)
+                            except ValueError:
+                                idx = 0
+                            idx = (idx + 1) % len(keys)
+                            store.profile.selected_main = keys[idx]
+                            store.save()
+                            refresh_visibility()
 
             ui.process_events(event)
 

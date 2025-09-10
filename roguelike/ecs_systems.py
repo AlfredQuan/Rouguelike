@@ -163,12 +163,14 @@ class CollisionSystem(esper.Processor):
                                 proj.pierce -= 1
                         break
             elif proj.owner == "enemy":
-                for ee, (ppos2, pcol2, _pl, phealth, phurt) in self.world.get_components(Position, Collider, Player, Health, Hurtbox):
-                    if (ppos.x - ppos2.x) ** 2 + (pcol.radius + pcol2.radius) ** 2 <= (pcol.radius + pcol2.radius) ** 2:
+                for ee, (pp2, col2, _pl, phealth, phurt) in self.world.get_components(Position, Collider, Player, Health, Hurtbox):
+                    dx = ppos.x - pp2.x
+                    dy = ppos.y - pp2.y
+                    rsum = pcol.radius + col2.radius
+                    if dx*dx + dy*dy <= rsum * rsum:
                         if phurt.cooldown <= 0.0:
                             phealth.current -= proj.damage
                             phurt.cooldown = phurt.i_frames
-                        # enemy projectile always despawns on hit
                         self.world.delete_entity(pe)
                         break
 
@@ -274,6 +276,9 @@ class WeaponFireSystem(esper.Processor):
             # Main weapons: projectile-like behaviors
             if loadout.main is not None:
                 w = loadout.main
+                # Sanity guards
+                if w.fire_rate <= 0:
+                    w.fire_rate = 0.2
                 w.cooldown -= dt
                 if w.cooldown <= 0:
                     self._fire_main(ppos, w)
@@ -462,6 +467,40 @@ class ProjectileCleanupSystem(esper.Processor):
             self.world.delete_entity(e)
 
 
+class WeaponSanitySystem(esper.Processor):
+    def __init__(self, ctx: GameContext, content):
+        super().__init__()
+        self.ctx = ctx
+        self.content = content
+
+    def process(self, dt: float) -> None:
+        # Ensure player main weapon exists and has sane params
+        for e, (ld,) in self.world.get_components(Loadout):
+            if ld.main is None:
+                # Recreate from selected_main if available, else basic_bolt
+                key = getattr(getattr(self.world, 'profile', None), 'selected_main', None) or 'basic_bolt'
+                wd = (self.content.weapons_main or self.content.weapons_legacy or {}).get(key, {})
+                if wd:
+                    from .ecs_components import WeaponInstance
+                    ld.main = WeaponInstance(
+                        key=key,
+                        behavior=str(wd.get('behavior', 'projectile')),
+                        fire_rate=float(wd.get('fire_rate', 2.0)),
+                        cooldown=0.0,
+                        damage=int(wd.get('damage', 10)),
+                        speed=float(wd.get('speed', 350.0)),
+                        lifetime=float(wd.get('lifetime', 1.2)),
+                        count=int(wd.get('count', 1)),
+                        spread_deg=float(wd.get('spread_deg', 0.0)),
+                        pierce=int(wd.get('pierce', 0)),
+                    )
+            else:
+                if ld.main.fire_rate <= 0:
+                    ld.main.fire_rate = 0.2
+        # Only one player expected
+        return
+
+
 class PickupMagnetSystem(esper.Processor):
     def __init__(self, ctx: GameContext, magnet_radius: float, speed: float = 260.0) -> None:
         super().__init__()
@@ -579,15 +618,49 @@ class EnemySpawnSystem(esper.Processor):
         self.rng = random.Random(42)
         self.offscreen_margin = offscreen_margin
         self.boss_spawned: set[str] = set()
+        self.cur_wave_idx: int = -1
+        self.surge_timer: float = 0.0
 
     def process(self, dt: float) -> None:
         if self.ctx.paused:
             return
         self.timer += dt
+        self.surge_timer += dt
+        # Wave change detection
+        prev_idx = self.cur_wave_idx
+        idx = self._current_wave_index()
+        if idx != self.cur_wave_idx:
+            # If previous wave had a boss at_end, spawn it now
+            if prev_idx is not None and prev_idx >= 0:
+                waves = self._waves()
+                if 0 <= prev_idx < len(waves):
+                    prev_wave = waves[prev_idx]
+                    boss = prev_wave.get('boss') if prev_wave else None
+                    if boss and boss.get('at_end', False):
+                        key = str(boss.get('key', ''))
+                        if key and (key not in self.boss_spawned):
+                            self._spawn_enemy_of_type(key)
+                            self.boss_spawned.add(key)
+                            self.ctx.banner_text = "Boss Appears!"
+                            self.ctx.banner_time_left = 3.5
+            self.cur_wave_idx = idx
+            # Announce wave
+            if idx >= 0:
+                self.ctx.banner_text = f"Wave {idx+1}!"
+                self.ctx.banner_time_left = 3.0
         interval = self._current_interval()
         if self.timer >= interval:
             self.timer -= interval
             self._spawn_enemy()
+        # Surge spawns
+        surge_every = float((self._current_wave() or {}).get('surge_every', 0))
+        surge_size = int((self._current_wave() or {}).get('surge_size', 0))
+        if surge_every > 0 and surge_size > 0 and self.surge_timer >= surge_every:
+            self.surge_timer = 0.0
+            self.ctx.banner_text = "Horde!"
+            self.ctx.banner_time_left = 2.5
+            for _ in range(surge_size):
+                self._spawn_enemy()
 
     def _spawn_enemy(self) -> None:
         player_pos: Optional[Position] = None
@@ -601,10 +674,21 @@ class EnemySpawnSystem(esper.Processor):
         boss = (wave or {}).get('boss') if wave else None
         if boss:
             key = str(boss.get('key'))
-            at = float(boss.get('at', 0))
-            if key and (key not in self.boss_spawned) and (self.ctx.stats.time_sec >= at):
+            at = float(boss.get('at', -1))
+            at_end = bool(boss.get('at_end', False))
+            should = False
+            if at >= 0:
+                should = self.ctx.stats.time_sec >= at
+            elif at_end:
+                # end of current wave
+                w = self._current_wave()
+                if w:
+                    should = self.ctx.stats.time_sec >= float(w.get('start', 0)) + float(w.get('duration', 0))
+            if key and (key not in self.boss_spawned) and should:
                 self._spawn_enemy_of_type(key)
                 self.boss_spawned.add(key)
+                self.ctx.banner_text = "Boss Appears!"
+                self.ctx.banner_time_left = 3.5
                 return
         # Spawn just outside the current camera viewport
         camx, camy = self.ctx.cam_x, self.ctx.cam_y
@@ -647,7 +731,7 @@ class EnemySpawnSystem(esper.Processor):
             break
 
     def _current_wave(self):
-        waves = (self.content.waves or {}).get('waves', [])
+        waves = self._waves()
         t = self.ctx.stats.time_sec
         cur = None
         for w in waves:
@@ -658,6 +742,19 @@ class EnemySpawnSystem(esper.Processor):
         if cur is None and waves:
             cur = waves[-1]
         return cur
+
+    def _current_wave_index(self) -> int:
+        waves = self._waves()
+        t = self.ctx.stats.time_sec
+        for i, w in enumerate(waves):
+            start = float(w.get('start', 0))
+            duration = float(w.get('duration', 0))
+            if t >= start and t < start + duration:
+                return i
+        return len(waves) - 1 if waves else -1
+
+    def _waves(self):
+        return (self.content.waves or {}).get('waves', [])
 
     def _current_interval(self) -> float:
         w = self._current_wave()

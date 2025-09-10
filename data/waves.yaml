@@ -5,12 +5,16 @@ waves:
   - start: 0
     duration: 60
     spawn_interval: 1.0
+    surge_every: 25
+    surge_size: 10
     weights:
       grunt: 8
       runner: 2
   - start: 60
     duration: 60
     spawn_interval: 0.9
+    surge_every: 25
+    surge_size: 12
     weights:
       grunt: 6
       runner: 3
@@ -18,6 +22,8 @@ waves:
   - start: 120
     duration: 90
     spawn_interval: 0.8
+    surge_every: 30
+    surge_size: 16
     weights:
       grunt: 5
       runner: 3
@@ -26,21 +32,25 @@ waves:
   - start: 210
     duration: 90
     spawn_interval: 0.7
+    surge_every: 30
+    surge_size: 18
     weights:
       grunt: 4
       runner: 3
       tank: 2
       shooter: 2
       elite_grunt: 1
+    boss:
+      key: boss_ogre
+      at_end: true
   - start: 300
     duration: 9999
     spawn_interval: 0.6
+    surge_every: 35
+    surge_size: 20
     weights:
       grunt: 3
       runner: 3
       tank: 2
       shooter: 3
       elite_grunt: 1
-    boss:
-      key: boss_ogre
-      at: 330   # spawn once at 330s
