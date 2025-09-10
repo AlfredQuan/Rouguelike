@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import pygame
-from typing import Dict, List, Tuple
+import pygame_gui
+from typing import Dict, List
 
 from .config import Settings
 from .content import Content
@@ -12,178 +13,146 @@ def run_meta_menu(settings: Settings, store: ProfileStore, content: Content) -> 
     screen = pygame.display.set_mode((settings.window.width, settings.window.height))
     pygame.display.set_caption(f"Meta Menu — {settings.window.title}")
     clock = pygame.time.Clock()
+    ui = pygame_gui.UIManager((settings.window.width, settings.window.height))
 
-    font = pygame.font.Font(None, 28)
-    small = pygame.font.Font(None, 22)
-
-    # Costs (demo): can be moved to config later
+    # Costs (demo): could be moved to config later
     costs: Dict[str, int] = {
         "unlock_main_switch": 2,
         **{k: 1 for k in (content.weapons_sub or {}).keys()},
     }
 
-    subs: List[str] = list((content.weapons_sub or {}).keys())
-    mains: List[str] = list((content.weapons_main or content.weapons_legacy or {}).keys())
-    tab = 'shop'  # 'shop', 'achievements', 'save'
+    # Tabs
+    tab_buttons: Dict[str, pygame_gui.elements.UIButton] = {}
+    current_tab = 'shop'
+    for i, name in enumerate(['shop', 'achievements', 'save']):
+        tab_buttons[name] = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect(20 + i * 140, 20, 120, 30),
+            text=name.title(),
+            manager=ui
+        )
 
-    def tab_rects() -> Dict[str, pygame.Rect]:
-        names = ['shop', 'achievements', 'save']
-        return {n: pygame.Rect(20 + i*140, 20, 120, 28) for i, n in enumerate(names)}
+    # Currency label
+    currency_label = pygame_gui.elements.UILabel(
+        relative_rect=pygame.Rect(settings.window.width - 240, 22, 220, 26),
+        text=f"Currency: {store.profile.currency}",
+        manager=ui
+    )
 
-    def main_rects() -> Tuple[pygame.Rect, pygame.Rect]:
-        left = pygame.Rect(30, 110, 24, 24)
-        right = pygame.Rect(300, 110, 24, 24)
-        return left, right
+    # Main section
+    main_panel = pygame_gui.elements.UIPanel(pygame.Rect(20, 60, 400, 120), manager=ui)
+    pygame_gui.elements.UILabel(pygame.Rect(10, 5, 160, 24), "Main Weapon", manager=ui, container=main_panel)
+    main_switch_btn = pygame_gui.elements.UIButton(pygame.Rect(10, 35, 220, 32),
+                                                   text=f"Unlock Switch (Cost {costs.get('unlock_main_switch', 2)})",
+                                                   manager=ui, container=main_panel)
+    mains = list((content.weapons_main or content.weapons_legacy or {}).keys())
+    main_dropdown = pygame_gui.elements.UIDropDownMenu(options_list=mains or [store.profile.selected_main],
+                                                       starting_option=store.profile.selected_main,
+                                                       relative_rect=pygame.Rect(240, 35, 140, 32),
+                                                       manager=ui, container=main_panel)
 
-    def list_rect(i: int) -> pygame.Rect:
-        return pygame.Rect(30, 180 + i * 26, 380, 22)
+    # Shop panel
+    shop_panel = pygame_gui.elements.UIPanel(pygame.Rect(20, 190, 400, settings.window.height - 240), manager=ui)
+    subs = list((content.weapons_sub or {}).keys())
+    shop_list = pygame_gui.elements.UISelectionList(relative_rect=pygame.Rect(10, 10, 240, shop_panel.get_relative_rect().height - 20),
+                                                    item_list=[f"{k} ({'Unlocked' if k in (store.profile.unlocked_subs or []) else 'Locked'})" for k in subs],
+                                                    manager=ui, container=shop_panel)
+    unlock_btn = pygame_gui.elements.UIButton(pygame.Rect(260, 10, 120, 32), text="Unlock", manager=ui, container=shop_panel)
+
+    # Achievements panel
+    ach_panel = pygame_gui.elements.UIPanel(pygame.Rect(440, 60, settings.window.width - 460, settings.window.height - 100), manager=ui)
+    ach_text = pygame_gui.elements.UITextBox(html_text="", relative_rect=pygame.Rect(10, 10, ach_panel.get_relative_rect().width - 20, ach_panel.get_relative_rect().height - 20), manager=ui, container=ach_panel)
+
+    # Save panel
+    save_panel = pygame_gui.elements.UIPanel(pygame.Rect(20, 60, 400, 120), manager=ui)
+    reset_btn = pygame_gui.elements.UIButton(pygame.Rect(10, 10, 160, 32), text="Reset Profile", manager=ui, container=save_panel)
+    start_btn = pygame_gui.elements.UIButton(pygame.Rect(20, settings.window.height - 50, 200, 36), text="Start Run (S)", manager=ui)
+
+    def refresh_visibility():
+        # Toggle panels per tab
+        shop_panel.hide() if current_tab != 'shop' else shop_panel.show()
+        ach_panel.hide() if current_tab != 'achievements' else ach_panel.show()
+        save_panel.hide() if current_tab != 'save' else save_panel.show()
+        # Update main section controls by unlock state
+        if store.profile.main_switch_unlocked:
+            main_switch_btn.hide()
+            main_dropdown.show()
+        else:
+            main_switch_btn.show()
+            main_dropdown.hide()
+        # Update currency label
+        currency_label.set_text(f"Currency: {store.profile.currency}")
+        # Update achievements
+        defs = content.achievements or {}
+        got = store.profile.achievements or {}
+        lines = ["<b>Achievements</b><br><br>"]
+        for key, meta in defs.items():
+            name = meta.get('name', key)
+            desc = meta.get('description', '')
+            ok = got.get(key, False)
+            lines.append(f"<font color=#{'66FF66' if ok else 'CCCCCC'}>{name} {'(Done)' if ok else ''}</font><br>{desc}<br><br>")
+        totals = f"Totals — Kills {getattr(store.profile,'total_kills',0)}, Time {int(getattr(store.profile,'total_time',0))}s, Score {int(getattr(store.profile,'total_score',0))}"
+        lines.append(totals)
+        ach_text.set_text("".join(lines))
+        # Update shop list
+        shop_list.set_item_list([f"{k} ({'Unlocked' if k in (store.profile.unlocked_subs or []) else 'Locked'})" for k in subs])
+
+    refresh_visibility()
 
     running = True
     while running:
-        clock.tick(60)
-        mx, my = pygame.mouse.get_pos()
-        mpressed = pygame.mouse.get_pressed()[0]
-        clicked = False
+        time_delta = clock.tick(60) / 1000.0
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_s:
-                    running = False
-                if event.key == pygame.K_u and not store.profile.main_switch_unlocked:
-                    cost = costs.get("unlock_main_switch", 2)
-                    if store.profile.currency >= cost:
-                        store.profile.currency -= cost
-                        store.profile.main_switch_unlocked = True
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_s:
+                running = False
+            if event.type == pygame.USEREVENT:
+                if event.user_type == pygame_gui.UI_BUTTON_PRESSED:
+                    if event.ui_element == start_btn:
+                        running = False
+                    elif event.ui_element == main_switch_btn:
+                        cost = costs.get("unlock_main_switch", 2)
+                        if not store.profile.main_switch_unlocked and store.profile.currency >= cost:
+                            store.profile.currency -= cost
+                            store.profile.main_switch_unlocked = True
+                            store.save()
+                            refresh_visibility()
+                    elif event.ui_element in tab_buttons.values():
+                        for name, btn in tab_buttons.items():
+                            if event.ui_element == btn:
+                                current_tab = name
+                                refresh_visibility()
+                                break
+                    elif event.ui_element == unlock_btn:
+                        sel = shop_list.get_single_selection()
+                        if sel:
+                            key = sel.split(' ')[0]
+                            if key not in (store.profile.unlocked_subs or []):
+                                cost = costs.get(key, 1)
+                                if store.profile.currency >= cost:
+                                    store.profile.currency -= cost
+                                    (store.profile.unlocked_subs or []).append(key)
+                                    store.save()
+                                    refresh_visibility()
+                    elif event.ui_element == reset_btn:
+                        p = store.profile
+                        p.currency = 0
+                        p.unlocked_subs = []
+                        p.main_switch_unlocked = False
+                        p.selected_main = 'basic_bolt'
+                        p.achievements = {}
+                        p.total_kills = 0
+                        p.total_time = 0.0
+                        p.total_score = 0.0
                         store.save()
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                clicked = True
-                # Switch tabs
-                for name, rect in tab_rects().items():
-                    if rect.collidepoint(mx, my):
-                        tab = name
-                        break
+                        refresh_visibility()
+                elif event.user_type == pygame_gui.UI_DROP_DOWN_MENU_CHANGED and event.ui_element == main_dropdown:
+                    store.profile.selected_main = event.text
+                    store.save()
 
-        # Interactions
-        lrect, rrect = main_rects()
-        if clicked and store.profile.main_switch_unlocked and mains:
-            if lrect.collidepoint(mx, my) or rrect.collidepoint(mx, my):
-                try:
-                    idx = mains.index(store.profile.selected_main)
-                except ValueError:
-                    idx = 0
-                if lrect.collidepoint(mx, my):
-                    idx = (idx - 1) % len(mains)
-                else:
-                    idx = (idx + 1) % len(mains)
-                store.profile.selected_main = mains[idx]
-                store.save()
+            ui.process_events(event)
 
-        if tab == 'shop':
-            for i, key in enumerate(subs):
-                rect = list_rect(i)
-                unlocked = key in (store.profile.unlocked_subs or [])
-                if clicked and rect.collidepoint(mx, my) and not unlocked:
-                    cost = costs.get(key, 1)
-                    if store.profile.currency >= cost:
-                        store.profile.currency -= cost
-                        (store.profile.unlocked_subs or []).append(key)
-                        store.save()
-        elif tab == 'save':
-            # Reset profile button
-            reset_rect = pygame.Rect(30, 180, 200, 28)
-            if clicked and reset_rect.collidepoint(mx, my):
-                # Minimal reset (keep currency for safety? here reset all)
-                p = store.profile
-                p.currency = 0
-                p.unlocked_subs = []
-                p.main_switch_unlocked = False
-                p.selected_main = 'basic_bolt'
-                p.achievements = {}
-                p.total_kills = 0
-                p.total_time = 0.0
-                p.total_score = 0.0
-                store.save()
-
-        # Draw
+        ui.update(time_delta)
         screen.fill((18, 18, 22))
-        # Tabs
-        tabs = tab_rects()
-        for name, rect in tabs.items():
-            pygame.draw.rect(screen, (50, 50, 60), rect)
-            if tab == name:
-                pygame.draw.rect(screen, (200, 200, 220), rect, 2)
-            screen.blit(small.render(name.title(), True, (230, 230, 230)), (rect.x + 10, rect.y + 4))
-        screen.blit(small.render(f"Currency: {store.profile.currency}", True, (220, 220, 220)), (screen.get_width()-220, 26))
-
-        # Main weapon section
-        screen.blit(small.render("Main Weapon", True, (220, 220, 220)), (30, 78))
-        ms = store.profile.main_switch_unlocked
-        ms_text = "Unlocked" if ms else f"Locked (click to unlock: cost {costs.get('unlock_main_switch', 2)} or press U)"
-        ms_label = small.render(f"Switch: {ms_text}", True, (200, 200, 210))
-        screen.blit(ms_label, (30, 96))
-
-        # Draw main selection arrows and current main
-        if ms and mains:
-            lrect, rrect = main_rects()
-            pygame.draw.polygon(screen, (240, 240, 200), [(lrect.right, lrect.top), (lrect.left, lrect.top + lrect.height // 2), (lrect.right, lrect.bottom)])
-            pygame.draw.polygon(screen, (240, 240, 200), [(rrect.left, rrect.top), (rrect.right, rrect.top + rrect.height // 2), (rrect.left, rrect.bottom)])
-            current = store.profile.selected_main
-            screen.blit(small.render(f"< {current} >", True, (255, 255, 255)), (60, 112))
-        else:
-            # Click to unlock main switch via label
-            if pygame.mouse.get_pressed()[0]:
-                if ms_label.get_rect(topleft=(30, 96)).collidepoint(mx, my):
-                    cost = costs.get("unlock_main_switch", 2)
-                    if store.profile.currency >= cost:
-                        store.profile.currency -= cost
-                        store.profile.main_switch_unlocked = True
-                        store.save()
-
-        if tab == 'shop':
-            screen.blit(small.render("Sub-Weapons (click to unlock)", True, (220, 220, 220)), (30, 150))
-            for i, key in enumerate(subs):
-                rect = list_rect(i)
-                unlocked = key in (store.profile.unlocked_subs or [])
-                color = (255, 255, 180) if rect.collidepoint(mx, my) else (200, 200, 200)
-                cost = costs.get(key, 1)
-                label = f"{key} — {'Unlocked' if unlocked else f'Cost {cost}'}"
-                pygame.draw.rect(screen, (40, 40, 50), rect)
-                pygame.draw.rect(screen, (90, 90, 110), rect, 1)
-                screen.blit(small.render(label, True, color), (rect.x + 6, rect.y + 2))
-        elif tab == 'achievements':
-            screen.blit(small.render("Achievements", True, (220, 220, 220)), (30, 150))
-            y = 176
-            defs = content.achievements or {}
-            got = store.profile.achievements or {}
-            for key, meta in defs.items():
-                name = meta.get('name', key)
-                desc = meta.get('description', '')
-                ok = got.get(key, False)
-                color = (180, 255, 180) if ok else (180, 180, 180)
-                screen.blit(small.render(f"{name} {'(Done)' if ok else ''}", True, color), (30, y))
-                y += 20
-                screen.blit(small.render(desc, True, (200, 200, 200)), (40, y))
-                y += 20
-            # Totals
-            totals = f"Totals — Kills {getattr(store.profile,'total_kills',0)}, Time {int(getattr(store.profile,'total_time',0))}s, Score {int(getattr(store.profile,'total_score',0))}"
-            screen.blit(small.render(totals, True, (220,220,220)), (30, y+10))
-        elif tab == 'save':
-            screen.blit(small.render("Save & Profile", True, (220, 220, 220)), (30, 150))
-            reset_rect = pygame.Rect(30, 180, 200, 28)
-            pygame.draw.rect(screen, (100, 60, 60), reset_rect)
-            pygame.draw.rect(screen, (200, 120, 120), reset_rect, 2)
-            screen.blit(small.render("Reset Profile", True, (255, 230, 230)), (reset_rect.x + 20, reset_rect.y + 4))
-
-        # Right pane: Unlocked details
-        rx = 440
-        screen.blit(small.render("Unlocked Subs:", True, (220, 220, 220)), (rx, 78))
-        uy = 96
-        for key in (store.profile.unlocked_subs or []):
-            screen.blit(small.render(f"- {key}", True, (220, 220, 220)), (rx, uy))
-            uy += 20
-
-        # Footer
-        screen.blit(small.render("Press S to start run", True, (200, 200, 255)), (30, settings.window.height - 36))
-
+        ui.draw_ui(screen)
         pygame.display.flip()

@@ -1,5 +1,5 @@
 {
-  "currency": 395,
+  "currency": 933,
   "unlocks": {},
   "upgrades": {},
   "unlocked_subs": [
@@ -11,8 +11,11 @@
   ],
   "main_switch_unlocked": true,
   "selected_main": "rapid_blaster",
-  "achievements": {},
-  "total_kills": 3,
-  "total_time": 6.547000000000028,
-  "total_score": 36.547
+  "achievements": {
+    "killer_100": true,
+    "endurer_300": true
+  },
+  "total_kills": 417,
+  "total_time": 445.6150000000016,
+  "total_score": 4615.615000000133
 }

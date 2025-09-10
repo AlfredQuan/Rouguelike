@@ -241,61 +241,7 @@ class RenderSystem(esper.Processor):
             self.surf.blit(small.render(f"Main: {main_key}", True, (230, 230, 230)), (x0, y0))
             self.surf.blit(small.render(f"Sub:  {subs}", True, (230, 230, 230)), (x0, y0 + 18))
 
-        # Level-up overlay
-        if self.ctx.paused and self.ctx.levelup_choices:
-            overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-            overlay.fill((0, 0, 0, 160))
-            self.surf.blit(overlay, (0, 0))
-            big_font = pygame.font.Font(None, 36)
-            self.surf.blit(big_font.render("Choose an Upgrade (1/2/3)", True, (255, 255, 255)), (self.width//2 - 180, 120))
-            # Cards layout
-            cw, ch = 220, 120
-            spacing = 40
-            total_w = 3 * cw + 2 * spacing
-            start_x = self.width // 2 - total_w // 2
-            y = 180
-            for i, key in enumerate(self.ctx.levelup_choices):
-                x = start_x + i * (cw + spacing)
-                pygame.draw.rect(self.surf, (50, 50, 60), pygame.Rect(x, y, cw, ch), border_radius=8)
-                pygame.draw.rect(self.surf, (200, 200, 220), pygame.Rect(x, y, cw, ch), 2, border_radius=8)
-                self.surf.blit(big_font.render(f"{i+1}", True, (255, 255, 255)), (x + cw - 30, y + 8))
-                card = self.cards.get(key, {})
-                name = str(card.get("name", key))
-                desc = str(card.get("description", ""))
-                title_font = pygame.font.Font(None, 28)
-                small_font = pygame.font.Font(None, 22)
-                self.surf.blit(title_font.render(name, True, (255, 255, 255)), (x + 12, y + 16))
-                # Wrap desc roughly
-                words = desc.split()
-                line = ""
-                yy = y + 48
-                for w in words:
-                    if small_font.size(line + (" " if line else "") + w)[0] > cw - 24:
-                        self.surf.blit(small_font.render(line, True, (220, 220, 230)), (x + 12, yy))
-                        yy += 22
-                        line = w
-                    else:
-                        line = (line + " " + w).strip()
-                if line:
-                    self.surf.blit(small_font.render(line, True, (220, 220, 230)), (x + 12, yy))
-        elif self.ctx.paused:
-            # Pause menu with cheat help
-            overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-            overlay.fill((0, 0, 0, 160))
-            self.surf.blit(overlay, (0, 0))
-            big = pygame.font.Font(None, 36)
-            self.surf.blit(big.render("Paused", True, (255, 255, 255)), (self.width//2 - 60, 110))
-            info = [
-                "Cheats:",
-                "F1 +10 XP, F2 Heal, F3 Unlock all subs",
-                "F4 Add orbital, F11 Aura, F12 Storm",
-                "F5 Sniper, F7 Tri, F8 Nova, F9 Rapid, F10 Clear main, C +10 Currency",
-                "Press P to resume",
-            ]
-            y = 160
-            for line in info:
-                self.surf.blit(font.render(line, True, (230, 230, 230)), (self.width//2 - 260, y))
-                y += 24
+        # In-game modal UI (level-up/pause) is handled by pygame_gui in GameUI
 
 
 class WeaponFireSystem(esper.Processor):
