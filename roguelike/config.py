@@ -16,6 +16,13 @@ class WindowConfig:
 
 
 @dataclass
+class WorldConfig:
+    width: int = 2400
+    height: int = 2400
+    grid_size: int = 64
+
+
+@dataclass
 class GameplayConfig:
     player_move_speed: float = 180.0
     player_radius: int = 14
@@ -42,6 +49,7 @@ class SpawnConfig:
     enemy_spawn_interval: float = 1.0
     spawn_increase_every: float = 30.0
     spawn_increase_amount: float = 0.5
+    offscreen_margin: int = 80
 
 
 @dataclass
@@ -51,11 +59,20 @@ class MetaConfig:
 
 
 @dataclass
+class EconomyConfig:
+    score_to_currency: float = 0.1
+    kills_to_currency: float = 0.2
+    time_to_currency: float = 0.0
+
+
+@dataclass
 class Settings:
     window: WindowConfig
+    world: WorldConfig
     gameplay: GameplayConfig
     spawning: SpawnConfig
     meta: MetaConfig
+    economy: EconomyConfig
 
 
 def _tuple3(v: Any, default: tuple[int, int, int]) -> tuple[int, int, int]:
@@ -78,6 +95,13 @@ def load_settings(path: str | Path = "config/settings.yaml") -> Settings:
         height=int(win.get("height", 540)),
         title=str(win.get("title", "Roguelike Survivor")),
         fps=int(win.get("fps", 60)),
+    )
+
+    world_raw = raw.get("world", {})
+    world = WorldConfig(
+        width=int(world_raw.get("width", 2400)),
+        height=int(world_raw.get("height", 2400)),
+        grid_size=int(world_raw.get("grid_size", 64)),
     )
 
     gp = raw.get("gameplay", {})
@@ -104,6 +128,7 @@ def load_settings(path: str | Path = "config/settings.yaml") -> Settings:
         enemy_spawn_interval=float(sp.get("enemy_spawn_interval", 1.0)),
         spawn_increase_every=float(sp.get("spawn_increase_every", 30.0)),
         spawn_increase_amount=float(sp.get("spawn_increase_amount", 0.5)),
+        offscreen_margin=int(sp.get("offscreen_margin", 80)),
     )
 
     mt = raw.get("meta", {})
@@ -112,5 +137,11 @@ def load_settings(path: str | Path = "config/settings.yaml") -> Settings:
         starting_currency=int(mt.get("starting_currency", 0)),
     )
 
-    return Settings(window=window, gameplay=gameplay, spawning=spawning, meta=meta)
+    eco_raw = raw.get("economy", {})
+    economy = EconomyConfig(
+        score_to_currency=float(eco_raw.get("score_to_currency", 0.1)),
+        kills_to_currency=float(eco_raw.get("kills_to_currency", 0.2)),
+        time_to_currency=float(eco_raw.get("time_to_currency", 0.0)),
+    )
 
+    return Settings(window=window, world=world, gameplay=gameplay, spawning=spawning, meta=meta, economy=economy)

@@ -13,6 +13,7 @@ from .ecs_components import (
     Experience,
     Faction,
     Health,
+    Obstacle,
     Loadout,
     Orbit,
     Field,
@@ -68,9 +69,26 @@ class MovementSystem(esper.Processor):
     def process(self, dt: float) -> None:
         if self.ctx.paused:
             return
-        for _, (p, v) in self.world.get_components(Position, Velocity):
+        # Move all entities with velocity
+        for e, (p, v) in self.world.get_components(Position, Velocity):
+            oldx, oldy = p.x, p.y
             p.x += v.x * dt
             p.y += v.y * dt
+            # Clamp to world bounds for player and enemies
+            if self.world.component_for_entity(e, Player) is not None or self.world.component_for_entity(e, Enemy) is not None:
+                p.x = max(0, min(self.ctx.world_width, p.x))
+                p.y = max(0, min(self.ctx.world_height, p.y))
+            # Resolve collisions with obstacles for player
+            if self.world.component_for_entity(e, Player) is not None:
+                for _, (op, ocol, _obs) in self.world.get_components(Position, Collider, Obstacle):
+                    dx, dy = p.x - op.x, p.y - op.y
+                    dist2 = dx*dx + dy*dy
+                    min_dist = ocol.radius + self.world.component_for_entity(e, Collider).radius
+                    if dist2 < min_dist * min_dist:
+                        ndx, ndy, dist = _norm(dx, dy)
+                        push = min_dist - dist
+                        p.x += ndx * push
+                        p.y += ndy * push
 
 
 class EnemyAISystem(esper.Processor):
@@ -146,18 +164,45 @@ class CollisionSystem(esper.Processor):
 
 
 class RenderSystem(esper.Processor):
-    def __init__(self, ctx: GameContext, cards: dict[str, dict], surface: pygame.Surface, width: int, height: int) -> None:
+    def __init__(self, ctx: GameContext, cards: dict[str, dict], surface: pygame.Surface, width: int, height: int, grid_size: int) -> None:
         super().__init__()
         self.ctx = ctx
         self.cards = cards
         self.surf = surface
         self.width = width
         self.height = height
+        self.grid_size = grid_size
 
     def process(self, dt: float) -> None:
-        self.surf.fill((20, 20, 24))
+        # Camera offset
+        camx, camy = self.ctx.cam_x, self.ctx.cam_y
+        ox = int(self.width // 2 - camx)
+        oy = int(self.height // 2 - camy)
+
+        # Background grid
+        self.surf.fill((16, 16, 20))
+        gs = max(8, self.grid_size)
+        color_grid = (30, 30, 36)
+        start_x = (camx // gs) * gs - self.width
+        start_y = (camy // gs) * gs - self.height
+        x = start_x
+        while x < camx + self.width:
+            sx = int(x + ox)
+            pygame.draw.line(self.surf, color_grid, (sx, 0), (sx, self.height))
+            x += gs
+        y = start_y
+        while y < camy + self.height:
+            sy = int(y + oy)
+            pygame.draw.line(self.surf, color_grid, (0, sy), (self.width, sy))
+            y += gs
+
+        # World bounds rectangle
+        wb = pygame.Rect(ox, oy, self.ctx.world_width, self.ctx.world_height)
+        pygame.draw.rect(self.surf, (60, 60, 72), wb, 2)
+
+        # Entities
         for _, (pos, sprite) in self.world.get_components(Position, Sprite):
-            pygame.draw.circle(self.surf, sprite.color, (int(pos.x), int(pos.y)), sprite.radius)
+            pygame.draw.circle(self.surf, sprite.color, (int(pos.x + ox), int(pos.y + oy)), sprite.radius)
 
         # Draw AoE fields as translucent circles
         for _, (pos, fld) in self.world.get_components(Position, Field):
@@ -167,7 +212,7 @@ class RenderSystem(esper.Processor):
             overlay = pygame.Surface((r * 2 + 4, r * 2 + 4), pygame.SRCALPHA)
             color = (*fld.color[:3], 60)
             pygame.draw.circle(overlay, color, (r + 2, r + 2), r)
-            self.surf.blit(overlay, (int(pos.x - r - 2), int(pos.y - r - 2)))
+            self.surf.blit(overlay, (int(pos.x + ox - r - 2), int(pos.y + oy - r - 2)))
 
         # HUD: health bar, xp bar, level
         font = pygame.font.Font(None, 22)
@@ -184,8 +229,8 @@ class RenderSystem(esper.Processor):
             pygame.draw.rect(self.surf, (60, 60, 60), pygame.Rect(20, 40, 200, 10))
             pygame.draw.rect(self.surf, (120, 180, 255), pygame.Rect(20, 40, int(200 * xp_ratio), 10))
             self.surf.blit(font.render(f"Lv {exp.level}", True, (230, 230, 230)), (230, 38))
-            # Score
-            self.surf.blit(font.render(f"Score: {int(self.ctx.stats.score)}  Kills: {self.ctx.stats.kills}", True, (230, 230, 230)), (20, 58))
+            # Score line moved lower to avoid overlap
+            self.surf.blit(font.render(f"Time {self.ctx.stats.time_sec:.0f}s  Score {int(self.ctx.stats.score)}  Kills {self.ctx.stats.kills}", True, (230, 230, 230)), (20, 64))
 
         # Weapon HUD: show counts/types for quick feedback
         x0, y0 = 20, 60
@@ -469,7 +514,7 @@ class EnemyDeathSystem(esper.Processor):
 
 
 class EnemySpawnSystem(esper.Processor):
-    def __init__(self, ctx: GameContext, width: int, height: int, base_interval: float, min_distance: float, enemy_speed: float, enemy_damage: int, enemy_color: tuple[int, int, int]) -> None:
+    def __init__(self, ctx: GameContext, width: int, height: int, base_interval: float, min_distance: float, enemy_speed: float, enemy_damage: int, enemy_color: tuple[int, int, int], offscreen_margin: int = 80) -> None:
         super().__init__()
         self.ctx = ctx
         self.width = width
@@ -481,6 +526,7 @@ class EnemySpawnSystem(esper.Processor):
         self.enemy_damage = enemy_damage
         self.enemy_color = enemy_color
         self.rng = random.Random(42)
+        self.offscreen_margin = offscreen_margin
 
     def process(self, dt: float) -> None:
         if self.ctx.paused:
@@ -497,33 +543,49 @@ class EnemySpawnSystem(esper.Processor):
             break
         if player_pos is None:
             return
-        # Spawn around edges at least min_distance away
-        for _ in range(20):
+        # Spawn just outside the current camera viewport
+        camx, camy = self.ctx.cam_x, self.ctx.cam_y
+        vw, vh = self.width, self.height
+        margin = self.offscreen_margin
+        # Viewport in world coords
+        left = camx - vw / 2
+        right = camx + vw / 2
+        top = camy - vh / 2
+        bottom = camy + vh / 2
+        for _ in range(50):
             side = self.rng.choice(["top", "bottom", "left", "right"])
             if side == "top":
-                x = self.rng.uniform(0, self.width)
-                y = -20
+                x = self.rng.uniform(left - margin, right + margin)
+                y = top - margin
             elif side == "bottom":
-                x = self.rng.uniform(0, self.width)
-                y = self.height + 20
+                x = self.rng.uniform(left - margin, right + margin)
+                y = bottom + margin
             elif side == "left":
-                x = -20
-                y = self.rng.uniform(0, self.height)
+                x = left - margin
+                y = self.rng.uniform(top - margin, bottom + margin)
             else:
-                x = self.width + 20
-                y = self.rng.uniform(0, self.height)
+                x = right + margin
+                y = self.rng.uniform(top - margin, bottom + margin)
+            # Clamp to world bounds
+            x = max(0, min(self.ctx.world_width, x))
+            y = max(0, min(self.ctx.world_height, y))
+            # Ensure not inside viewport
+            if left <= x <= right and top <= y <= bottom:
+                continue
+            # Ensure at least min_distance from player
             dx, dy = x - player_pos.x, y - player_pos.y
             _, _, dist = _norm(dx, dy)
-            if dist >= self.min_distance:
-                e = self.world.create_entity()
-                self.world.add_component(e, Position(x, y))
-                self.world.add_component(e, Velocity(0, 0))
-                self.world.add_component(e, Enemy(damage=self.enemy_damage, speed=self.enemy_speed))
-                self.world.add_component(e, Health(current=20, max_hp=20))
-                self.world.add_component(e, Collider(radius=12))
-                self.world.add_component(e, Faction("enemy"))
-                self.world.add_component(e, Sprite(self.enemy_color, 12))
-                break
+            if dist < self.min_distance:
+                continue
+            e = self.world.create_entity()
+            self.world.add_component(e, Position(x, y))
+            self.world.add_component(e, Velocity(0, 0))
+            self.world.add_component(e, Enemy(damage=self.enemy_damage, speed=self.enemy_speed))
+            self.world.add_component(e, Health(current=20, max_hp=20))
+            self.world.add_component(e, Collider(radius=12))
+            self.world.add_component(e, Faction("enemy"))
+            self.world.add_component(e, Sprite(self.enemy_color, 12))
+            break
 
 
 class FieldSystem(esper.Processor):

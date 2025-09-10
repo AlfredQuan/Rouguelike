@@ -8,7 +8,7 @@ import pygame
 
 from .config import Settings, load_settings
 from .content import Content
-from .ecs_components import Player, Health
+from .ecs_components import Player, Health, Position
 from .context import GameContext
 from .ecs_systems import (
     CollisionSystem,
@@ -50,6 +50,9 @@ class Game:
         self.ctx = GameContext()
         self.ctx.width = settings.window.width
         self.ctx.height = settings.window.height
+        self.ctx.world_width = settings.world.width
+        self.ctx.world_height = settings.world.height
+        self.ctx.grid_size = settings.world.grid_size
         # Pull meta-unlocked subs into context
         self.ctx.meta_unlocked_subs = set(self.profile.unlocked_subs or [])
 
@@ -60,6 +63,8 @@ class Game:
         gp = self.settings.gameplay
         # Player entity (single main from meta selection)
         create_player(self.world, self.content, "default", (w / 2, h / 2), main_key=self.profile.selected_main)
+        # Populate world with obstacles and pickups
+        self._populate_world()
 
         # Systems
         self.world.add_processor(InputSystem(self.ctx), priority=100)
@@ -84,9 +89,10 @@ class Game:
             enemy_speed=self.settings.gameplay.enemy_base_speed,
             enemy_damage=self.settings.gameplay.enemy_damage,
             enemy_color=self.settings.gameplay.enemy_color,
+            offscreen_margin=self.settings.spawning.offscreen_margin,
         ), priority=50)
         self.world.add_processor(LevelUpSystem(self.ctx, self.content.cards), priority=45)
-        self.world.add_processor(RenderSystem(self.ctx, self.content.cards, self.screen, w, h), priority=0)
+        self.world.add_processor(RenderSystem(self.ctx, self.content.cards, self.screen, w, h, self.settings.world.grid_size), priority=0)
 
     def run(self) -> None:
         running = True
@@ -106,6 +112,11 @@ class Game:
                     elif event.key == pygame.K_p and not self.ctx.levelup_choices:
                         self.ctx.paused = not self.ctx.paused
 
+            # Camera: follow player
+            for _, (ppos, _pl) in self.world.get_components(Position, Player):
+                self.ctx.cam_x, self.ctx.cam_y = ppos.x, ppos.y
+                break
+
             self.world.process(dt)
 
             # Check player death and end run
@@ -119,6 +130,30 @@ class Game:
     @staticmethod
     def init_pygame():
         pygame.init()
+
+    def _populate_world(self) -> None:
+        import random
+        from .ecs_components import Obstacle, Collider, Sprite, Position, Pickup
+        rng = random.Random(123)
+        # Obstacles as circles
+        for _ in range(20):
+            x = rng.uniform(100, self.ctx.world_width - 100)
+            y = rng.uniform(100, self.ctx.world_height - 100)
+            r = rng.randint(16, 28)
+            e = self.world.create_entity()
+            self.world.add_component(e, Position(x, y))
+            self.world.add_component(e, Collider(radius=r))
+            self.world.add_component(e, Obstacle())
+            self.world.add_component(e, Sprite((110, 110, 130), r))
+        # Health pickups
+        for _ in range(8):
+            x = rng.uniform(80, self.ctx.world_width - 80)
+            y = rng.uniform(80, self.ctx.world_height - 80)
+            e = self.world.create_entity()
+            self.world.add_component(e, Position(x, y))
+            self.world.add_component(e, Collider(radius=7))
+            self.world.add_component(e, Pickup("heal", 10))
+            self.world.add_component(e, Sprite((255, 120, 140), 7))
 
 
 def run_game() -> None:
@@ -135,10 +170,38 @@ def run_game() -> None:
         game = Game(settings)
         game.run()
         # Convert score to currency and show summary
-        earned = int(game.ctx.stats.score // 10) + game.ctx.stats.kills // 5
+        # Economy conversion from settings
+        earned = int(
+            game.ctx.stats.score * settings.economy.score_to_currency
+            + game.ctx.stats.kills * settings.economy.kills_to_currency
+            + game.ctx.stats.time_sec * settings.economy.time_to_currency
+        )
         if earned < 0:
             earned = 0
         profile.currency += earned
+        # Update totals for achievements
+        profile.total_kills = getattr(profile, 'total_kills', 0) + game.ctx.stats.kills
+        profile.total_time = getattr(profile, 'total_time', 0.0) + game.ctx.stats.time_sec
+        profile.total_score = getattr(profile, 'total_score', 0.0) + game.ctx.stats.score
+        # Evaluate achievements
+        ach_defs = content.achievements
+        unlocked = getattr(profile, 'achievements', {}) or {}
+        def _check(expr: str) -> bool:
+            try:
+                return bool(eval(expr, {}, {
+                    'total_kills': profile.total_kills,
+                    'total_time': profile.total_time,
+                    'total_score': profile.total_score,
+                }))
+            except Exception:
+                return False
+        if ach_defs:
+            for key, meta in ach_defs.items():
+                if not unlocked.get(key):
+                    cond = str(meta.get('condition', ''))
+                    if cond and _check(cond):
+                        unlocked[key] = True
+        profile.achievements = unlocked
         store.save()
         # Post-run screen
         screen = pygame.display.get_surface()

@@ -1,5 +1,5 @@
 {
-  "currency": 358,
+  "currency": 395,
   "unlocks": {},
   "upgrades": {},
   "unlocked_subs": [
@@ -10,5 +10,9 @@
     "support_pulse"
   ],
   "main_switch_unlocked": true,
-  "selected_main": "nova_burst"
+  "selected_main": "rapid_blaster",
+  "achievements": {},
+  "total_kills": 3,
+  "total_time": 6.547000000000028,
+  "total_score": 36.547
 }

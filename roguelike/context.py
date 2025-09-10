@@ -25,3 +25,9 @@ class GameContext:
     height: int = 0
     events: list = field(default_factory=list)
     stats: RunStats = field(default_factory=RunStats)
+    # Camera world position (follows player)
+    cam_x: float = 0.0
+    cam_y: float = 0.0
+    world_width: int = 2400
+    world_height: int = 2400
+    grid_size: int = 64

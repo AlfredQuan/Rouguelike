@@ -1,0 +1,16 @@
+# Simple achievement definitions
+killer_100:
+  name: Novice Slayer
+  description: Reach 100 total kills.
+  condition: total_kills >= 100
+
+endurer_300:
+  name: Endurer
+  description: Survive 300 seconds across runs.
+  condition: total_time >= 300
+
+scorer_5000:
+  name: Point Chaser
+  description: Accumulate 5000 total score.
+  condition: total_score >= 5000
+

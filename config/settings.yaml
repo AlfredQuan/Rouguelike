@@ -5,6 +5,12 @@ window:
   title: Roguelike Survivor
   fps: 60
 
+# World/camera
+world:
+  width: 2400
+  height: 2400
+  grid_size: 64
+
 # Gameplay/balance constants
 gameplay:
   player:
@@ -32,9 +38,15 @@ spawning:
   enemy_spawn_interval: 1.0   # seconds
   spawn_increase_every: 30.0  # seconds
   spawn_increase_amount: 0.5  # +50% rate every interval
+  offscreen_margin: 80        # pixels beyond the screen to spawn enemies
 
 # Meta progression
 meta:
   save_path: save/profile.json
   starting_currency: 0
 
+# Economy — tune post-run currency conversion
+economy:
+  score_to_currency: 0.1   # currency per 1 score
+  kills_to_currency: 0.2   # currency per 1 kill
+  time_to_currency: 0.0    # currency per 1 second

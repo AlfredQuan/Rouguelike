@@ -28,6 +28,11 @@ class Collider:
 
 
 @dataclass
+class Obstacle:
+    solid: bool = True
+
+
+@dataclass
 class Health:
     current: int
     max_hp: int
