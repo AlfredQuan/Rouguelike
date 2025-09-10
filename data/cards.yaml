@@ -22,3 +22,83 @@ max_health_2:
   description: Increase max health by 30.
   effect: player_max_health_add
   amount: 30
+
+# General weapon upgrades
+main_damage_1:
+  name: Sharpened Rounds
+  description: Increase all main weapon damage by 15%.
+  effect: main_damage_mul
+  amount: 1.15
+  repeatable: true
+
+main_fire_rate_1:
+  name: Quick Hands
+  description: Increase all main weapon fire rate by 10%.
+  effect: main_fire_rate_mul
+  amount: 1.10
+  repeatable: true
+
+# Sniper-specific upgrades (requires having sniper)
+sniper_pierce_1:
+  name: Armor-Piercing Rounds
+  description: Sniper gains +2 pierce.
+  effect: sniper_pierce_add
+  amount: 2
+  requires: ["has_main:sniper"]
+
+# Sub-weapon unlocks and acquisitions
+unlock_double_orb:
+  name: "Unlock: Double Orb"
+  description: Unlock the Double Orb sub-weapon.
+  effect: unlock_sub
+  weapon: double_orb
+
+add_double_orb:
+  name: "Acquire: Double Orb"
+  description: Add Double Orb to your sub slots.
+  effect: add_sub
+  weapon: double_orb
+  requires: ["sub_unlocked:double_orb", "not_owned_sub:double_orb"]
+
+unlock_guardian_orbs:
+  name: "Unlock: Guardian Orbs"
+  description: Unlock the Guardian Orbs sub-weapon.
+  effect: unlock_sub
+  weapon: guardian_orbs
+
+add_guardian_orbs:
+  name: "Acquire: Guardian Orbs"
+  description: Add Guardian Orbs to your sub slots.
+  effect: add_sub
+  weapon: guardian_orbs
+  requires: ["sub_unlocked:guardian_orbs", "not_owned_sub:guardian_orbs"]
+
+unlock_spike_ring:
+  name: "Unlock: Spike Ring"
+  description: Unlock the Spike Ring sub-weapon.
+  effect: unlock_sub
+  weapon: spike_ring
+
+add_spike_ring:
+  name: "Acquire: Spike Ring"
+  description: Add Spike Ring to your sub slots.
+  effect: add_sub
+  weapon: spike_ring
+  requires: ["sub_unlocked:spike_ring", "not_owned_sub:spike_ring"]
+
+# Sub-weapon upgrades (appear after owning specific sub)
+double_orb_count_1:
+  name: "Double Orb+: +2 count"
+  description: Increase Double Orb count by 2.
+  effect: weapon_count_add
+  weapon: double_orb
+  amount: 2
+  requires: ["sub_owned:double_orb"]
+
+guardian_orbs_radius_1:
+  name: Guardian Radius+
+  description: Increase Guardian Orbs radius by 20.
+  effect: sub_radius_add
+  weapon: guardian_orbs
+  amount: 20
+  requires: ["sub_owned:guardian_orbs"]

@@ -19,6 +19,14 @@ Setup
 2) Install deps: `pip install -r requirements.txt`
 3) Run: `python main.py`
 
+Cheats (for debugging)
+- `F1`: +10 XP
+- `F2`: Heal to full
+- `F3`: Unlock all sub-weapons
+- `F4`: Grant sub weapon `double_orb`
+- `F5`: Grant main weapon `sniper`
+- `F6`: Force open level-up selection
+
 Extending Content
 - Add or tweak YAML in `data/` — no code changes required for basic stats.
 - To add new behavior, create new Systems/Components and wire them in `roguelike/game.py`.

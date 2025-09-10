@@ -55,6 +55,7 @@ def create_player(world: esper.World, content: Content, key: str, pos: Tuple[flo
             lifetime=float(wd.get("lifetime", 1.2)),
             count=int(wd.get("count", 1)),
             spread_deg=float(wd.get("spread_deg", 0.0)),
+            pierce=int(wd.get("pierce", 0)),
         )
         main_instances.append(inst)
 

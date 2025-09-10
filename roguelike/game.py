@@ -17,13 +17,14 @@ from .ecs_systems import (
     EnemySpawnSystem,
     LevelUpSystem,
     MenuInputSystem,
+    WeaponFireSystem,
     InputSystem,
     MovementSystem,
     ProjectileLifetimeSystem,
     OrbitSystem,
     RenderSystem,
-    WeaponFireSystem,
 )
+from .cheats import CheatSystem
 from .factories import create_player
 from .meta import ProfileStore
 
@@ -53,6 +54,7 @@ class Game:
         # Systems
         self.world.add_processor(InputSystem(self.ctx), priority=100)
         self.world.add_processor(MenuInputSystem(self.ctx, self.content.cards), priority=95)
+        self.world.add_processor(CheatSystem(self.ctx, self.content), priority=92)
         self.world.add_processor(EnemyAISystem(self.ctx), priority=90)
         self.world.add_processor(WeaponFireSystem(self.ctx), priority=85)
         self.world.add_processor(MovementSystem(self.ctx), priority=80)

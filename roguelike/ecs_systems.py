@@ -114,7 +114,11 @@ class CollisionSystem(esper.Processor):
                 if (ppos.x - epos.x) ** 2 + (ppos.y - epos.y) ** 2 <= (pcol.radius + ecol.radius) ** 2:
                     ehealth.current -= proj.damage
                     if proj.despawn_on_hit:
-                        self.world.delete_entity(pe)
+                        if proj.pierce == 0:
+                            self.world.delete_entity(pe)
+                            break
+                        elif proj.pierce > 0:
+                            proj.pierce -= 1
                     break
 
         # Enemy vs player
@@ -249,11 +253,11 @@ class WeaponFireSystem(esper.Processor):
                 best = (epos.x, epos.y)
         return best
 
-    def _spawn_projectile(self, x: float, y: float, dx: float, dy: float, damage: int, lifetime: float, speed: float, color=(255, 240, 120), radius=5, despawn_on_hit=True) -> None:
+    def _spawn_projectile(self, x: float, y: float, dx: float, dy: float, damage: int, lifetime: float, speed: float, color=(255, 240, 120), radius=5, despawn_on_hit=True, pierce: int = 0) -> None:
         proj = self.world.create_entity()
         self.world.add_component(proj, Position(x, y))
         self.world.add_component(proj, Velocity(dx * speed, dy * speed))
-        self.world.add_component(proj, Projectile(damage, lifetime, speed, dx, dy, owner="player", despawn_on_hit=despawn_on_hit))
+        self.world.add_component(proj, Projectile(damage, lifetime, speed, dx, dy, owner="player", despawn_on_hit=despawn_on_hit, pierce=pierce))
         self.world.add_component(proj, Collider(radius=radius))
         self.world.add_component(proj, Sprite(color, radius))
 
@@ -270,7 +274,7 @@ class WeaponFireSystem(esper.Processor):
             # count + spread
             cx, cy = ppos.x, ppos.y
             if w.count <= 1 or w.spread_deg == 0:
-                self._spawn_projectile(cx, cy, ndx, ndy, w.damage, w.lifetime, w.speed)
+                self._spawn_projectile(cx, cy, ndx, ndy, w.damage, w.lifetime, w.speed, pierce=w.pierce)
             else:
                 # build spread around direction
                 angle0 = math.degrees(math.atan2(ndy, ndx))
@@ -284,14 +288,14 @@ class WeaponFireSystem(esper.Processor):
                 for a in angles:
                     rad = math.radians(a)
                     vx, vy = math.cos(rad), math.sin(rad)
-                    self._spawn_projectile(cx, cy, vx, vy, w.damage, w.lifetime, w.speed)
+                    self._spawn_projectile(cx, cy, vx, vy, w.damage, w.lifetime, w.speed, pierce=w.pierce)
         elif w.behavior == "radial_burst":
             cx, cy = ppos.x, ppos.y
             cnt = max(1, w.count)
             for i in range(cnt):
                 a = (i / cnt) * 2 * math.pi
                 vx, vy = math.cos(a), math.sin(a)
-                self._spawn_projectile(cx, cy, vx, vy, w.damage, w.lifetime, w.speed)
+                self._spawn_projectile(cx, cy, vx, vy, w.damage, w.lifetime, w.speed, pierce=w.pierce)
         else:
             # default projectile
             self._spawn_projectile(ppos.x, ppos.y, ndx, ndy, w.damage, w.lifetime, w.speed)
@@ -463,16 +467,64 @@ class LevelUpSystem(esper.Processor):
             if exp.xp >= need:
                 exp.xp -= need
                 exp.level += 1
-                # Offer 3 random cards
-                keys = list(self.cards.keys())
+                # Offer 3 random available cards
+                keys = [k for k, v in self.cards.items() if self._is_available(k, v)]
                 if not keys:
                     return
                 self.ctx.levelup_choices = [self.ctx.rng.choice(keys) for _ in range(3)]
                 self.ctx.paused = True
                 break
 
+    def _is_available(self, key: str, card: dict) -> bool:
+        # repeatable or single-purchase check
+        repeatable = bool(card.get("repeatable", False))
+        if (not repeatable) and (key in self.ctx.acquired_cards):
+            return False
+        # Requirements
+        reqs = card.get("requires")
+        if not reqs:
+            return True
+        if isinstance(reqs, str):
+            reqs = [reqs]
+        # Collect owned subs/mains
+        owned_subs = set()
+        owned_mains = set()
+        for pe, (ld,) in self.world.get_components(Loadout):
+            owned_subs.update([w.key for w in ld.sub])
+            owned_mains.update([w.key for w in ld.main])
+            break
+        for r in reqs:
+            if isinstance(r, str):
+                if r.startswith("sub_unlocked:"):
+                    wkey = r.split(":", 1)[1]
+                    if wkey not in self.ctx.unlocked_subs and wkey not in owned_subs:
+                        return False
+                elif r.startswith("sub_owned:"):
+                    wkey = r.split(":", 1)[1]
+                    if wkey not in owned_subs:
+                        return False
+                elif r.startswith("not_owned_sub:"):
+                    wkey = r.split(":", 1)[1]
+                    if wkey in owned_subs:
+                        return False
+                elif r.startswith("has_main:"):
+                    wkey = r.split(":", 1)[1]
+                    if wkey not in owned_mains:
+                        return False
+                elif r.startswith("not_acquired:"):
+                    ckey = r.split(":", 1)[1]
+                    if ckey in self.ctx.acquired_cards:
+                        return False
+                # unknown reqs are ignored
+        return True
 
-def apply_card_effect(world: esper.World, player_eid: int, effect: str, amount: float) -> None:
+
+def apply_card_effect(world: esper.World, player_eid: int, key: str, card: dict, ctx: GameContext) -> None:
+    effect = str(card.get("effect", ""))
+    amount = float(card.get("amount", 0))
+    weapon_key = card.get("weapon")
+    repeatable = bool(card.get("repeatable", False))
+
     if effect == "player_move_speed_mul":
         spd = world.component_for_entity(player_eid, Speed)
         spd.mult *= float(amount)
@@ -480,6 +532,65 @@ def apply_card_effect(world: esper.World, player_eid: int, effect: str, amount: 
         h = world.component_for_entity(player_eid, Health)
         h.max_hp += int(amount)
         h.current = min(h.max_hp, h.current + int(amount))
+    elif effect == "main_damage_mul":
+        loadout = world.component_for_entity(player_eid, Loadout)
+        for w in loadout.main:
+            w.damage = int(round(w.damage * float(amount)))
+    elif effect == "main_fire_rate_mul":
+        loadout = world.component_for_entity(player_eid, Loadout)
+        for w in loadout.main:
+            w.fire_rate *= float(amount)
+    elif effect == "weapon_count_add":
+        loadout = world.component_for_entity(player_eid, Loadout)
+        for group in (loadout.main, loadout.sub):
+            for w in group:
+                if weapon_key is None or w.key == weapon_key:
+                    w.count += int(amount)
+    elif effect == "sub_radius_add":
+        loadout = world.component_for_entity(player_eid, Loadout)
+        for w in loadout.sub:
+            if weapon_key is None or w.key == weapon_key:
+                w.radius += float(amount)
+    elif effect == "sub_angular_speed_mul":
+        loadout = world.component_for_entity(player_eid, Loadout)
+        for w in loadout.sub:
+            if weapon_key is None or w.key == weapon_key:
+                w.angular_speed_deg *= float(amount)
+    elif effect == "sniper_pierce_add":
+        loadout = world.component_for_entity(player_eid, Loadout)
+        for w in loadout.main:
+            if w.key == "sniper":
+                w.pierce += int(amount)
+    elif effect == "unlock_sub":
+        if weapon_key:
+            ctx.unlocked_subs.add(str(weapon_key))
+    elif effect == "add_sub":
+        if weapon_key:
+            from .content import Content  # avoid cycle
+            # naive world-global content fetch isn't available; rely on card providing stats? We'll use Content again via import
+            # For simplicity, reconstruct from file
+            content = Content()
+            wd = content.weapon_sub(weapon_key)
+            if wd:
+                loadout = world.component_for_entity(player_eid, Loadout)
+                inst = WeaponInstance(
+                    key=str(weapon_key),
+                    behavior=str(wd.get("behavior", "orbital")),
+                    fire_rate=float(wd.get("fire_rate", 1.0)),
+                    cooldown=0.0,
+                    damage=int(wd.get("damage", 5)),
+                    speed=float(wd.get("speed", 0.0)),
+                    lifetime=float(wd.get("lifetime", -1.0)),
+                    count=int(wd.get("count", 1)),
+                    spread_deg=float(wd.get("spread_deg", 0.0)),
+                    radius=float(wd.get("radius", 100.0)),
+                    angular_speed_deg=float(wd.get("angular_speed_deg", 180.0)),
+                    state={},
+                )
+                loadout.sub.append(inst)
+
+    if not repeatable:
+        ctx.acquired_cards.add(key)
 
 
 class MenuInputSystem(esper.Processor):
@@ -520,10 +631,8 @@ class MenuInputSystem(esper.Processor):
         if player_eid is None:
             return
         card = self.cards.get(key, {})
-        effect = card.get("effect")
-        amount = float(card.get("amount", 0))
-        if effect:
-            apply_card_effect(self.world, player_eid, effect, amount)
+        if card.get("effect"):
+            apply_card_effect(self.world, player_eid, key, card, self.ctx)
         # Unpause
         self.ctx.paused = False
         self.ctx.levelup_choices = None

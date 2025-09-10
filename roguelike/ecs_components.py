@@ -58,6 +58,7 @@ class Projectile:
     dir_y: float
     owner: str  # 'player' or 'enemy'
     despawn_on_hit: bool = True
+    pierce: int = 0  # how many enemies it can pierce before despawn; -1 = infinite
 
 
 @dataclass
@@ -107,6 +108,7 @@ class WeaponInstance:
     radius: float = 100.0
     angular_speed_deg: float = 180.0
     state: Dict[str, object] = None  # for runtime data like spawned entity ids
+    pierce: int = 0
 
 
 @dataclass

@@ -27,3 +27,20 @@ support_pulse:
   lifetime: 0.8
   count: 8
 
+guardian_orbs:
+  name: Guardian Orbs
+  behavior: orbital
+  count: 6
+  radius: 140
+  angular_speed_deg: 150
+  damage: 5
+  lifetime: -1
+
+spike_ring:
+  name: Spike Ring
+  behavior: radial_burst
+  fire_rate: 0.5
+  damage: 7
+  speed: 260
+  lifetime: 1.1
+  count: 16
