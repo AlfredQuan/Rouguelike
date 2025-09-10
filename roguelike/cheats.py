@@ -67,6 +67,14 @@ class CheatSystem(esper.Processor):
             elif key == pygame.K_F12:
                 # Add Random Storm
                 self._add_sub("random_storm")
+            elif key == pygame.K_c:
+                # Add meta currency +10
+                store = getattr(self.world, 'profile_store', None)
+                profile = getattr(self.world, 'profile', None)
+                if store and profile is not None:
+                    profile.currency += 10
+                    store.save()
+                    print("[Cheat] +10 Currency")
             elif key == pygame.K_F6:
                 # Force open card selection (random 3 available)
                 # Build available from cards and context using LevelUpSystem's availability logic

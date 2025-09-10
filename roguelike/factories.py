@@ -11,6 +11,7 @@ from .ecs_components import (
     Experience,
     Faction,
     Health,
+    Hurtbox,
     Loadout,
     Pickup,
     Player,
@@ -39,6 +40,7 @@ def create_player(world: esper.World, content: Content, key: str, pos: Tuple[flo
     world.add_component(e, Experience())
     move_speed = float(ch.get("move_speed", 180.0))
     world.add_component(e, Speed(base=move_speed))
+    world.add_component(e, Hurtbox())
     # Loadout with single main and multiple sub weapon instances
     main_inst: Optional[WeaponInstance] = None
     wd = content.weapon_main(start_main_key) or content.weapon(start_main_key)

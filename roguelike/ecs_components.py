@@ -133,3 +133,9 @@ class Field:
     lifetime: float  # -1 for infinite
     follow_owner: bool = False
     color: tuple[int, int, int] = (255, 120, 120)
+
+
+@dataclass
+class Hurtbox:
+    cooldown: float = 0.0
+    i_frames: float = 0.5  # seconds of invulnerability after a hit

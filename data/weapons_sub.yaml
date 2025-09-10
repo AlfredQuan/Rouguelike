@@ -4,7 +4,7 @@ orbital_blade:
   name: Orbital Blade
   behavior: orbital
   count: 2
-  radius: 90
+  radius: 60
   angular_speed_deg: 180
   damage: 6
   lifetime: -1

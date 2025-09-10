@@ -82,6 +82,7 @@ orbital_blade_count_1:
   weapon: orbital_blade
   amount: 1
   requires: ["sub_owned:orbital_blade"]
+  repeatable: true
 
 aura_garlic_radius_1:
   name: Garlic Radius+
@@ -90,6 +91,7 @@ aura_garlic_radius_1:
   weapon: aura_garlic
   amount: 20
   requires: ["sub_owned:aura_garlic"]
+  repeatable: true
 
 aura_garlic_dps_1:
   name: Garlic Power+
@@ -98,6 +100,7 @@ aura_garlic_dps_1:
   weapon: aura_garlic
   amount: 1.2
   requires: ["sub_owned:aura_garlic"]
+  repeatable: true
 
 random_storm_radius_1:
   name: Storm Radius+
@@ -106,3 +109,4 @@ random_storm_radius_1:
   weapon: random_storm
   amount: 15
   requires: ["sub_owned:random_storm"]
+  repeatable: true

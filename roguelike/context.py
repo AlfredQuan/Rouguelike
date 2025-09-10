@@ -7,6 +7,14 @@ from typing import Any
 
 
 @dataclass
+class RunStats:
+    time_sec: float = 0.0
+    kills: int = 0
+    score: float = 0.0
+    earned_currency: int = 0
+
+
+@dataclass
 class GameContext:
     paused: bool = False
     levelup_choices: Optional[List[str]] = None
@@ -16,3 +24,4 @@ class GameContext:
     width: int = 0
     height: int = 0
     events: list = field(default_factory=list)
+    stats: RunStats = field(default_factory=RunStats)

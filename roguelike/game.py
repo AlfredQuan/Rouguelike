@@ -21,8 +21,10 @@ from .ecs_systems import (
     InputSystem,
     MovementSystem,
     ProjectileLifetimeSystem,
+    HurtCooldownSystem,
     OrbitSystem,
     FieldSystem,
+    ScoreSystem,
     RenderSystem,
 )
 from .cheats import CheatSystem
@@ -68,7 +70,9 @@ class Game:
         self.world.add_processor(MovementSystem(self.ctx), priority=80)
         self.world.add_processor(OrbitSystem(self.ctx), priority=75)
         self.world.add_processor(FieldSystem(self.ctx), priority=74)
+        self.world.add_processor(ScoreSystem(self.ctx), priority=72)
         self.world.add_processor(ProjectileLifetimeSystem(self.ctx), priority=70)
+        self.world.add_processor(HurtCooldownSystem(self.ctx), priority=68)
         self.world.add_processor(CollisionSystem(self.ctx, w, h), priority=60)
         self.world.add_processor(EnemyDeathSystem(self.ctx, __import__("random").Random(1337)), priority=55)
         self.world.add_processor(EnemySpawnSystem(
@@ -104,11 +108,9 @@ class Game:
 
             self.world.process(dt)
 
-            # Check player death and grant small currency for demo
+            # Check player death and end run
             for _, (pl, h) in self.world.get_components(Player, Health):
                 if h.current <= 0:
-                    self.profile.currency += 1
-                    self.profile_store.save()
                     running = False
                     break
 
@@ -122,11 +124,50 @@ class Game:
 def run_game() -> None:
     Game.init_pygame()
     settings = load_settings()
-    # Meta menu before starting the run
     from .meta_menu import run_meta_menu
-    temp_content = Content()
-    temp_store = ProfileStore(settings.meta.save_path)
-    temp_profile = temp_store.load(starting_currency=settings.meta.starting_currency)
-    run_meta_menu(settings, temp_store, temp_content)
-    game = Game(settings)
-    game.run()
+    store = ProfileStore(settings.meta.save_path)
+    profile = store.load(starting_currency=settings.meta.starting_currency)
+    while True:
+        # Meta menu
+        content = Content()
+        run_meta_menu(settings, store, content)
+        # Start a run
+        game = Game(settings)
+        game.run()
+        # Convert score to currency and show summary
+        earned = int(game.ctx.stats.score // 10) + game.ctx.stats.kills // 5
+        if earned < 0:
+            earned = 0
+        profile.currency += earned
+        store.save()
+        # Post-run screen
+        screen = pygame.display.get_surface()
+        clock = pygame.time.Clock()
+        font = pygame.font.Font(None, 28)
+        big = pygame.font.Font(None, 36)
+        showing = True
+        while showing:
+            clock.tick(60)
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return
+                if event.type == pygame.KEYDOWN:
+                    if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                        showing = False
+                        break
+                    if event.key == pygame.K_q:
+                        return
+            screen.fill((16, 16, 20))
+            screen.blit(big.render("Run Over", True, (255,255,255)), (40, 40))
+            lines = [
+                f"Time: {game.ctx.stats.time_sec:.1f}s",
+                f"Kills: {game.ctx.stats.kills}",
+                f"Score: {int(game.ctx.stats.score)}",
+                f"Currency Earned: +{earned} (Total: {profile.currency})",
+                "Press Enter to return to Meta Menu, Q to quit",
+            ]
+            y = 90
+            for line in lines:
+                screen.blit(font.render(line, True, (230,230,230)), (40, y))
+                y += 26
+            pygame.display.flip()

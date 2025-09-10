@@ -32,6 +32,7 @@ Cheats (for debugging)
 - `F10`: Clear main
 - `F11`: Add sub `aura_garlic`
 - `F12`: Add sub `random_storm`
+- `C`: +10 currency (meta)
 
 Extending Content
 - Add or tweak YAML in `data/` — no code changes required for basic stats.

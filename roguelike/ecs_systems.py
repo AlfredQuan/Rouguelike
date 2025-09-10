@@ -24,6 +24,7 @@ from .ecs_components import (
     Speed,
     Velocity,
     WeaponInstance,
+    Hurtbox,
 )
 from .context import GameContext
 
@@ -122,11 +123,14 @@ class CollisionSystem(esper.Processor):
                             proj.pierce -= 1
                     break
 
-        # Enemy vs player
-        for pe, (ppos, pcol, _pl, phealth) in self.world.get_components(Position, Collider, Player, Health):
+        # Enemy vs player (with invulnerability frames)
+        for pe, (ppos, pcol, _pl, phealth, phurt) in self.world.get_components(Position, Collider, Player, Health, Hurtbox):
             for ee, (epos, ecol, enemy) in self.world.get_components(Position, Collider, Enemy):
                 if (ppos.x - epos.x) ** 2 + (ppos.y - epos.y) ** 2 <= (pcol.radius + ecol.radius) ** 2:
-                    phealth.current -= enemy.damage
+                    if phurt.cooldown <= 0.0:
+                        phealth.current -= enemy.damage
+                        phurt.cooldown = phurt.i_frames
+                        break
 
         # Player vs pickups
         for pe, (ppos, pcol, _pl, phealth, pexp) in self.world.get_components(
@@ -180,6 +184,8 @@ class RenderSystem(esper.Processor):
             pygame.draw.rect(self.surf, (60, 60, 60), pygame.Rect(20, 40, 200, 10))
             pygame.draw.rect(self.surf, (120, 180, 255), pygame.Rect(20, 40, int(200 * xp_ratio), 10))
             self.surf.blit(font.render(f"Lv {exp.level}", True, (230, 230, 230)), (230, 38))
+            # Score
+            self.surf.blit(font.render(f"Score: {int(self.ctx.stats.score)}  Kills: {self.ctx.stats.kills}", True, (230, 230, 230)), (20, 58))
 
         # Weapon HUD: show counts/types for quick feedback
         x0, y0 = 20, 60
@@ -238,7 +244,7 @@ class RenderSystem(esper.Processor):
                 "Cheats:",
                 "F1 +10 XP, F2 Heal, F3 Unlock all subs",
                 "F4 Add orbital, F11 Aura, F12 Storm",
-                "F5 Sniper, F7 Tri, F8 Nova, F9 Rapid, F10 Clear main",
+                "F5 Sniper, F7 Tri, F8 Nova, F9 Rapid, F10 Clear main, C +10 Currency",
                 "Press P to resume",
             ]
             y = 160
@@ -351,6 +357,10 @@ class WeaponFireSystem(esper.Processor):
             w.state = {}
         spawned: list[int] = list(w.state.get("entities", []))
         need = max(1, w.count)
+        # Trim extras
+        while len(spawned) > need:
+            eid = spawned.pop()
+            self.world.delete_entity(eid)
         # Spawn missing
         while len(spawned) < need:
             idx = len(spawned)
@@ -363,6 +373,20 @@ class WeaponFireSystem(esper.Processor):
             self.world.add_component(e, Projectile(w.damage, -1.0, 0.0, 0.0, 0.0, owner="player", despawn_on_hit=False))
             self.world.add_component(e, Sprite((200, 220, 255), 6))
             spawned.append(e)
+        # Re-space only when count changed
+        last_count = w.state.get("last_count")
+        if last_count != need:
+            for i, eid in enumerate(spawned):
+                orb = self.world.component_for_entity(eid, Orbit)
+                if orb:
+                    orb.angle_deg = (i / max(1, need)) * 360.0
+        # Always update radius/speed without resetting angle
+        for eid in spawned:
+            orb = self.world.component_for_entity(eid, Orbit)
+            if orb:
+                orb.radius = w.radius
+                orb.angular_speed_deg = w.angular_speed_deg
+        w.state["last_count"] = need
         w.state["entities"] = spawned
 
     def _ensure_aura(self, owner_eid: int, ppos: Position, w: WeaponInstance) -> None:
@@ -404,6 +428,19 @@ class ProjectileLifetimeSystem(esper.Processor):
             self.world.delete_entity(e)
 
 
+class HurtCooldownSystem(esper.Processor):
+    def __init__(self, ctx: GameContext) -> None:
+        super().__init__()
+        self.ctx = ctx
+
+    def process(self, dt: float) -> None:
+        if self.ctx.paused:
+            return
+        for _, hb in self.world.get_component(Hurtbox):
+            if hb.cooldown > 0:
+                hb.cooldown = max(0.0, hb.cooldown - dt)
+
+
 class EnemyDeathSystem(esper.Processor):
     def __init__(self, ctx: GameContext, rng: random.Random) -> None:
         super().__init__()
@@ -418,6 +455,9 @@ class EnemyDeathSystem(esper.Processor):
             if health.current <= 0:
                 to_delete.append((e, pos))
         for e, pos in to_delete:
+            # Stats
+            self.ctx.stats.kills += 1
+            self.ctx.stats.score += 10
             # Drop XP gem with some chance
             if self.rng.random() < 0.9:
                 xe = self.world.create_entity()
@@ -531,6 +571,18 @@ class OrbitSystem(esper.Processor):
             rad = math.radians(orb.angle_deg)
             pos.x = owner_pos.x + math.cos(rad) * orb.radius
             pos.y = owner_pos.y + math.sin(rad) * orb.radius
+
+
+class ScoreSystem(esper.Processor):
+    def __init__(self, ctx: GameContext) -> None:
+        super().__init__()
+        self.ctx = ctx
+
+    def process(self, dt: float) -> None:
+        if self.ctx.paused:
+            return
+        self.ctx.stats.time_sec += dt
+        self.ctx.stats.score += dt  # passive score per second
 
 
 def xp_needed_for_level(level: int) -> int:
@@ -691,6 +743,7 @@ def apply_card_effect(world: esper.World, player_eid: int, key: str, card: dict,
                 loadout.sub.append(inst)
 
     if not repeatable:
+        # allow multiple levels by suffixing with a counter? For simplicity, don't block if repeatable
         ctx.acquired_cards.add(key)
 
 
